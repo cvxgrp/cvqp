@@ -3,7 +3,10 @@ import time
 import numpy as np
 import scipy as sp
 import cvxpy as cp
-from cvar_proj import proj_sum_largest, proj_sum_largest_cvxpy
+from cvar_proj import proj_sum_largest, proj_sum_largest_cvxpy, proj_sum_largest_cpp
+
+def factor_solve(factor, rhs):
+    return sp.linalg.lu_solve(factor, rhs)
 
 def update_x(
     factor,
@@ -33,14 +36,21 @@ def update_x(
         np.ndarray: The solution to the linear system.
     """
 
-    rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
+    # rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
+    rhs = -q + rho * y_1(A, z, u) + rho * y_2(A_tilde, z_tilde, u_tilde)
     
-    x = sp.linalg.lu_solve(factor, rhs)
+    # x = sp.linalg.lu_solve(factor, rhs)
+    x = factor_solve(factor, rhs)
 
     return x
 
+def y_1(A, z, u):
+    return A.T @ (z - u)
 
-def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, print_freq=100, max_time_sec=1_200, warm=None):
+def y_2(A_tilde, z_tilde, u_tilde):
+    return A_tilde.T @ (z_tilde - u_tilde)
+
+def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None):
         
     history = { 
         "iter": [],
@@ -74,7 +84,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
     d0 = sum(A.shape[0] for A in proj_As) + A.shape[0]
     d1 = A.shape[1]
     
-    for i in tqdm(range(max_iter)):
+    # for i in tqdm(range(max_iter)):
+    for i in range(max_iter):
         z_old = z.copy()
         z_tilde_old = [z.copy() for z in z_tildes]
         
@@ -84,19 +95,17 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
         x = update_x(factor=factor, A=A, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
 
         # z-update: apply projection for cvar
-        z_hat =  A @ x + u
-        z = proj_sum_largest(z_hat, k, alpha)
-        z_cvxpy = proj_sum_largest_cvxpy(z_hat, k, alpha)
-        # compute the squared error for z and z_cvxpy from z_hat
-        norm = np.linalg.norm(z - z_hat)
-        cvxpy_norm = np.linalg.norm(z_hat - z_cvxpy)
-        # compute the sum of the largest k elements for z and z_cvxpy
-        sum_z = np.sort(z.copy())[::-1][:k].sum()
-        sum_cvxpy = np.sort(z_cvxpy.copy())[::-1][:k].sum()
+        z_hat = alpha_over * A @ x + (1 - alpha_over) * z + u
+        # z_hat =  A @ x + u
+        
+        # z = proj_sum_largest(z_hat, k, alpha)
+        z = proj_sum_largest_cpp(z_hat, k, alpha)
+
         time.time()
 
         # z-update: apply projection operators for each constraint
-        z_hats = [ A @ x + u for A, u in zip(proj_As, u_tildes)]
+        z_hats = [ alpha_over * A @ x + (1 - alpha_over) * z_ + u for A, u, z_ in zip(proj_As, u_tildes, z_tildes)]
+        # z_hats = [ A @ x + u for A, u in zip(proj_As, u_tildes)]
 
         for j in range(len(z_tildes)):
             z_tildes[j] = proj_fns[j](z_hats[j])
@@ -128,7 +137,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             history["objval"].append(objval)
             history["r_norm"].append(r_norm)
             history["s_norm"].append(s_norm)
-            # print(f"iter: {i}, objval: {objval}, r_norm: {r_norm}, s_norm: {s_norm}, u_norm: {np.linalg.norm(np.concatenate([u] + u_tildes))}, time: {time.time() - start_time}")
+            print(f"iter: {i}, objval: {objval}, r_norm: {r_norm}, s_norm: {s_norm}, u_norm: {np.linalg.norm(np.concatenate([u] + u_tildes))}, time: {time.time() - start_time}")
 
             eps_pri = (d0 ** .5) * abstol + reltol * max(np.linalg.norm(Ax), np.linalg.norm(np.concatenate([z] + z_tildes)))
             eps_dual = (d1 ** .5) * abstol + reltol * np.linalg.norm(rho * At_z)
@@ -145,13 +154,15 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             if time.time() - start_time > max_time_sec:
                 break
     
+    print("ADMM terminated after ", i, " iterations")
+    print("Time: ", time.time() - start_time)
     return x, history
 
 
 def test():
 
-    m = 1000
-    d = 50
+    m = 10_000
+    d = 500
     np.random.seed(0)
     A = np.random.randn(m, d) * .2 + .1
 
@@ -176,7 +187,7 @@ def test():
     objective = cp.Minimize(0.5 * cp.quad_form(x_cvxpy, P) + q @ x_cvxpy)
     constraints = [cp.sum_largest(A@x_cvxpy, k) <= alpha , -1 <= x_cvxpy, x_cvxpy <= 1]
     prob = cp.Problem(objective, constraints)
-    prob.solve(solver=cp.MOSEK)
+    prob.solve(solver=cp.MOSEK, verbose=True)
     print(prob.value)
     # print the sum of the largest k elements of A @ x_cvxpy.value
     print(np.sort(A @ x_cvxpy.value)[::-1][:k].sum())
