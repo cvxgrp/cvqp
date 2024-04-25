@@ -11,6 +11,7 @@ def factor_solve(factor, rhs):
 def update_x(
     factor,
     A: np.ndarray,
+    At: np.ndarray,
     A_tilde: np.ndarray,
     q: np.ndarray,
     z: np.ndarray,
@@ -26,32 +27,42 @@ def update_x(
     L is the lower triangular Cholesky factor of A'A.
 
     Args:
-        L (np.ndarray): The lower triangular Cholesky factor of the positive-definite matrix A'A.
-        prox_fns (list[ProxFn]): List of ProxFn objects that define the proximal operators for each constraint.
-        v_list (list[np.ndarray]): List of tensors (z - u).
-        c (np.ndarray): A vector of shape (num_assets * num_energy_segments) representing average losses.
-        rho (float): The ADMM penalty parameter.
+        factor (np.ndarray): The Cholesky factor of the coefficient matrix.
+        A (np.ndarray): The matrix A.
+        At (np.ndarray): The transpose of A.
+        A_tilde (np.ndarray): The matrix A_tilde.
+        q (np.ndarray): The vector q.
+        z (np.ndarray): The vector z.
+        u (np.ndarray): The vector u.
+        z_tilde (np.ndarray): The vector z_tilde.
+        u_tilde (np.ndarray): The vector u_tilde.
+        rho (float): The penalty parameter rho.
 
     Returns:
         np.ndarray: The solution to the linear system.
     """
 
     # rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
-    rhs = -q + rho * y_1(A, z, u) + rho * y_2(A_tilde, z_tilde, u_tilde)
+    rhs = -q + rho * y_1(A, z, u, At) + rho * y_2(A_tilde, z_tilde, u_tilde)
     
     # x = sp.linalg.lu_solve(factor, rhs)
     x = factor_solve(factor, rhs)
 
     return x
 
-def y_1(A, z, u):
-    return A.T @ (z - u)
+def y_1(A, z, u, At):
+    # return A.T @ (z - u)
+    return At @ (z - u)
 
 def y_2(A_tilde, z_tilde, u_tilde):
     return A_tilde.T @ (z_tilde - u_tilde)
 
 def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None):
         
+    mu = 10
+    rho_incr = 2
+    rho_decr = 2
+
     history = { 
         "iter": [],
         "objval": [],
@@ -83,6 +94,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
 
     d0 = sum(A.shape[0] for A in proj_As) + A.shape[0]
     d1 = A.shape[1]
+
+    At = np.array(A.T, order='C')
     
     # for i in tqdm(range(max_iter)):
     for i in range(max_iter):
@@ -92,10 +105,14 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
         # x-update: solve the linear system 
         z_tilde = np.concatenate(z_tildes)
         u_tilde = np.concatenate(u_tildes)
-        x = update_x(factor=factor, A=A, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
+        x = update_x(factor=factor, A=A, At=At, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
 
         # z-update: apply projection for cvar
-        z_hat = alpha_over * A @ x + (1 - alpha_over) * z + u
+        def over_relax_z_hat(x, z, alpha_over):  
+            return alpha_over * (A @ x) + (1 - alpha_over) * z + u    
+            # return A @ x + u
+
+        z_hat = over_relax_z_hat(x, z, alpha_over)
         # z_hat =  A @ x + u
         
         # z = proj_sum_largest(z_hat, k, alpha)
@@ -154,6 +171,22 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             if time.time() - start_time > max_time_sec:
                 break
     
+            # Update rho
+            changed = True
+            if r_norm > mu * s_norm:
+                rho *= rho_incr
+                u = u / rho_incr
+                u_tildes = [u_ / rho_incr for u_ in u_tildes]
+            elif s_norm > mu * r_norm:
+                rho /= rho_decr
+                u = u * rho_decr
+                u_tildes = [u_ * rho_decr for u_ in u_tildes]
+            else: 
+                changed = False
+            if changed: 
+                M = P + rho * AtA + rho * AtA_tilde
+                factor = sp.linalg.lu_factor(M)
+
     print("ADMM terminated after ", i, " iterations")
     print("Time: ", time.time() - start_time)
     return x, history
