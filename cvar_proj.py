@@ -1,7 +1,8 @@
 import numpy as np
 import cvxpy as cp
 import sys
-sys.path.append('/Users/ericluxenberg/Desk/Gridmatic/build')
+# sys.path.append('/Users/ericluxenberg/Desk/Gridmatic/build')
+sys.path.append('./build')
 import mybindings
 
 def proj_sum_largest_cvxpy(z: np.ndarray, k: int, alpha) -> np.ndarray:

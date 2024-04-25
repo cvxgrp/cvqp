@@ -172,20 +172,20 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
                 break
     
             # Update rho
-            changed = True
-            if r_norm > mu * s_norm:
-                rho *= rho_incr
-                u = u / rho_incr
-                u_tildes = [u_ / rho_incr for u_ in u_tildes]
-            elif s_norm > mu * r_norm:
-                rho /= rho_decr
-                u = u * rho_decr
-                u_tildes = [u_ * rho_decr for u_ in u_tildes]
-            else: 
-                changed = False
-            if changed: 
-                M = P + rho * AtA + rho * AtA_tilde
-                factor = sp.linalg.lu_factor(M)
+            # changed = True
+            # if r_norm > mu * s_norm:
+            #     rho *= rho_incr
+            #     u = u / rho_incr
+            #     u_tildes = [u_ / rho_incr for u_ in u_tildes]
+            # elif s_norm > mu * r_norm:
+            #     rho /= rho_decr
+            #     u = u * rho_decr
+            #     u_tildes = [u_ * rho_decr for u_ in u_tildes]
+            # else: 
+            #     changed = False
+            # if changed: 
+            #     M = P + rho * AtA + rho * AtA_tilde
+            #     factor = sp.linalg.lu_factor(M)
 
     print("ADMM terminated after ", i, " iterations")
     print("Time: ", time.time() - start_time)
