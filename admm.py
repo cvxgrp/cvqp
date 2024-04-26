@@ -60,8 +60,8 @@ def y_2(A_tilde, z_tilde, u_tilde):
 def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None):
         
     mu = 10
-    rho_incr = 2
-    rho_decr = 2
+    rho_incr = 1.5
+    rho_decr = 1.5
 
     history = { 
         "iter": [],
@@ -77,6 +77,14 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
     m = A.shape[0]
     k = int(beta * m)
     alpha = kappa * k
+
+    # scale problem data
+    # scale = max(-A.min(), A.max())
+    scale = 1
+    A /= scale
+    q /= scale
+    P /= scale 
+    alpha /= scale
 
     AtA = A.T @ A
     AtA_tilde = sum([A.T @ A for A in proj_As])
@@ -151,6 +159,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             # Compute and save convergence metrics
             history["iter"].append(i)
             objval = 0.5 * np.dot(x, P @ x) + q @ x
+            objval *= scale
+
             history["objval"].append(objval)
             history["r_norm"].append(r_norm)
             history["s_norm"].append(s_norm)
@@ -168,11 +178,11 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
                 break
 
             # Break loop if time limit is reached.
-            if time.time() - start_time > max_time_sec:
-                break
+            # if time.time() - start_time > max_time_sec:
+            #     break
     
             # Update rho
-            # changed = True
+            changed = True
             # if r_norm > mu * s_norm:
             #     rho *= rho_incr
             #     u = u / rho_incr
@@ -187,6 +197,12 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             #     M = P + rho * AtA + rho * AtA_tilde
             #     factor = sp.linalg.lu_factor(M)
 
+    # unscale
+    A *= scale
+    q *= scale
+    P *= scale
+    alpha *= scale
+
     print("ADMM terminated after ", i, " iterations")
     print("Time: ", time.time() - start_time)
     return x, history
@@ -194,7 +210,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
 
 def test():
 
-    m = 10_000
+    m = 100_000
     d = 500
     np.random.seed(0)
     A = np.random.randn(m, d) * .2 + .1
@@ -223,15 +239,15 @@ def test():
     prob.solve(solver=cp.MOSEK, verbose=True)
     print(prob.value)
     # print the sum of the largest k elements of A @ x_cvxpy.value
-    print(np.sort(A @ x_cvxpy.value)[::-1][:k].sum())
+    print(np.sort(A @ x_cvxpy.value)[::-1][:k].sum(), alpha)
 
 
     x, history = run_admm(
-        P, q, A, beta, kappa, proj_As, proj_fns, max_iter=500, #warm=x_cvxpy.value
+        P, q, A, beta, kappa, proj_As, proj_fns, max_iter=6000, #warm=x_cvxpy.value / 2 
     )
 
     print(history["objval"][-1])
-    print(np.sort(A @ x)[::-1][:k].sum())
+    print(np.sort(A @ x)[::-1][:k].sum(), alpha)
 
     print("relative objective error: ", abs(history["objval"][-1] - prob.value) / abs(prob.value))
 
