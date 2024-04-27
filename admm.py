@@ -5,6 +5,28 @@ import scipy as sp
 import cvxpy as cp
 from cvar_proj import proj_sum_largest, proj_sum_largest_cvxpy, proj_sum_largest_cpp
 
+def construct_cvxpy_prob(P_both, constraint_func):
+    x = cp.Variable(P_both.shape[0])
+
+    # P_both = P + rho * A.T @ A
+    # q_both = q - rho * A.T @ z_minus_u
+
+    q_both = cp.Parameter(P_both.shape[0])
+    q_both.value = np.zeros(P_both.shape[0])
+
+    obj_f = 0.5 * cp.quad_form(x, P_both) + q_both @ x
+    objective = cp.Minimize(obj_f)
+    constraints = constraint_func(x)
+    prob = cp.Problem(objective, constraints)
+    prob.solve(solver=cp.MOSEK, mosek_params = {'MSK_IPAR_INTPNT_MAX_ITERATIONS':  10}, accept_unknown=True)
+
+    def solver(q):
+        q_both.value = q
+        prob.solve(solver=cp.MOSEK, mosek_params = {'MSK_IPAR_INTPNT_MAX_ITERATIONS':  10}, accept_unknown=True)
+        return x.value
+
+    return solver 
+
 def factor_solve(factor, rhs):
     return sp.linalg.lu_solve(factor, rhs)
 
@@ -57,7 +79,7 @@ def y_1(A, z, u, At):
 def y_2(A_tilde, z_tilde, u_tilde):
     return A_tilde.T @ (z_tilde - u_tilde)
 
-def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None):
+def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None, constraint_func=None):
         
     mu = 10
     rho_incr = 1.5
@@ -104,6 +126,18 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
     d1 = A.shape[1]
 
     At = np.array(A.T, order='C')
+
+    if constraint_func is not None:
+        solver = construct_cvxpy_prob(
+            P + rho * AtA, 
+            constraint_func
+        )
+        def x_update_cvxpy(z,u):
+            z_minus_u = z - u
+            q_both = q - rho * (A.T @ z_minus_u)
+            return solver(q_both)
+    else:
+        x_update_cvxpy = None
     
     # for i in tqdm(range(max_iter)):
     for i in range(max_iter):
@@ -113,7 +147,11 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
         # x-update: solve the linear system 
         z_tilde = np.concatenate(z_tildes)
         u_tilde = np.concatenate(u_tildes)
-        x = update_x(factor=factor, A=A, At=At, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
+
+        if x_update_cvxpy is not None:
+            x = x_update_cvxpy(z,u)
+        else:
+            x = update_x(factor=factor, A=A, At=At, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
 
         # z-update: apply projection for cvar
         def over_relax_z_hat(x, z, alpha_over):  
@@ -196,6 +234,16 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             if changed: 
                 M = P + rho * AtA + rho * AtA_tilde
                 factor = sp.linalg.lu_factor(M)
+
+                if constraint_func is not None:
+                    solver = construct_cvxpy_prob(
+                        P + rho * AtA, 
+                        constraint_func
+                    )
+                    def x_update_cvxpy(z,u):
+                        z_minus_u = z - u
+                        q_both = q - rho * (A.T @ z_minus_u)
+                        return solver(q_both)
 
     # unscale
     A *= scale
