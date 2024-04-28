@@ -79,7 +79,7 @@ def y_1(A, z, u, At):
 def y_2(A_tilde, z_tilde, u_tilde):
     return A_tilde.T @ (z_tilde - u_tilde)
 
-def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None, constraint_func=None):
+def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None, constraint_func=None, verbose=False):
         
     mu = 10
     rho_incr = 1.5
@@ -202,7 +202,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             history["objval"].append(objval)
             history["r_norm"].append(r_norm)
             history["s_norm"].append(s_norm)
-            print(f"iter: {i}, objval: {objval}, r_norm: {r_norm}, s_norm: {s_norm}, u_norm: {np.linalg.norm(np.concatenate([u] + u_tildes))}, time: {time.time() - start_time}")
+            if verbose:
+                print(f"iter: {i}, objval: {objval}, r_norm: {r_norm}, s_norm: {s_norm}, u_norm: {np.linalg.norm(np.concatenate([u] + u_tildes))}, time: {time.time() - start_time}")
 
             eps_pri = (d0 ** .5) * abstol + reltol * max(np.linalg.norm(Ax), np.linalg.norm(np.concatenate([z] + z_tildes)))
             eps_dual = (d1 ** .5) * abstol + reltol * np.linalg.norm(rho * At_z)
