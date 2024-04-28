@@ -208,6 +208,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
             eps_dual = (d1 ** .5) * abstol + reltol * np.linalg.norm(rho * At_z)
             history["eps_pri"].append(eps_pri)
             history["eps_dual"].append(eps_dual)
+            history["rho"].append(rho)
 
             if (
                 history["r_norm"][-1] < history["eps_pri"][-1]
