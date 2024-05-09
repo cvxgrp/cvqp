@@ -18,11 +18,11 @@ def construct_cvxpy_prob(P_both, constraint_func):
     objective = cp.Minimize(obj_f)
     constraints = constraint_func(x)
     prob = cp.Problem(objective, constraints)
-    prob.solve(solver=cp.MOSEK, mosek_params = {'MSK_IPAR_INTPNT_MAX_ITERATIONS':  10}, accept_unknown=True)
+    prob.solve(solver=cp.OSQP)
 
     def solver(q):
         q_both.value = q
-        prob.solve(solver=cp.MOSEK, mosek_params = {'MSK_IPAR_INTPNT_MAX_ITERATIONS':  10}, accept_unknown=True)
+        prob.solve(solver=cp.OSQP, warm_start=True, max_iter=25)
         return x.value
 
     return solver 
@@ -134,7 +134,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
         )
         def x_update_cvxpy(z,u):
             z_minus_u = z - u
-            q_both = q - rho * (A.T @ z_minus_u)
+            q_both = q - rho * (At @ z_minus_u)
             return solver(q_both)
     else:
         x_update_cvxpy = None
