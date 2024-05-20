@@ -1,7 +1,6 @@
 import numpy as np
 import cvxpy as cp
 import sys
-# sys.path.append('/Users/ericluxenberg/Desk/Gridmatic/build')
 sys.path.append('./build')
 import mybindings
 
