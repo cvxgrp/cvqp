@@ -4,6 +4,7 @@ import numpy as np
 import scipy as sp
 import cvxpy as cp
 from cvar_proj import proj_sum_largest, proj_sum_largest_cvxpy, proj_sum_largest_cpp
+from typing import Callable
 
 def construct_cvxpy_prob(P_both, constraint_func):
     x = cp.Variable(P_both.shape[0])
@@ -41,6 +42,7 @@ def update_x(
     z_tilde: np.ndarray,
     u_tilde: np.ndarray,
     rho: float,
+    custom_solve: Callable = None,
 ) -> np.ndarray:
     """
     The x-update in the ADMM algorithm consists of minimizing a quadratic function, which is equivalent to
@@ -59,6 +61,7 @@ def update_x(
         z_tilde (np.ndarray): The vector z_tilde.
         u_tilde (np.ndarray): The vector u_tilde.
         rho (float): The penalty parameter rho.
+        custom_solve (callable): A function that solves the linear system using a sparse solver.
 
     Returns:
         np.ndarray: The solution to the linear system.
@@ -67,8 +70,11 @@ def update_x(
     # rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
     rhs = -q + rho * y_1(A, z, u, At) + rho * y_2(A_tilde, z_tilde, u_tilde)
     
-    # x = sp.linalg.lu_solve(factor, rhs)
-    x = factor_solve(factor, rhs)
+    x = factor_solve(factor, rhs) if not custom_solve is not None else custom_solve(rhs)
+    
+    # if custom_solve is not None:
+    #     x_ = custom_solve(rhs)
+    #     err = np.linalg.norm(x - x_) / np.linalg.norm(x)
 
     return x
 
@@ -79,7 +85,9 @@ def y_1(A, z, u, At):
 def y_2(A_tilde, z_tilde, u_tilde):
     return A_tilde.T @ (z_tilde - u_tilde)
 
-def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, warm=None, constraint_func=None, verbose=False):
+def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, 
+             max_iter=10_000, alpha=.5, rho=1.0, abstol=1e-4, reltol=1e-2, alpha_over=1.7, print_freq=100, max_time_sec=1_200, 
+             warm=None, constraint_func=None, custom_factor=None,verbose=False):
         
     mu = 10
     rho_incr = 1.5
@@ -110,11 +118,23 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
 
     AtA = A.T @ A
     AtA_tilde = sum([A.T @ A for A in proj_As])
-    A_tilde = np.vstack(proj_As)
+    if not sp.sparse.issparse(proj_As[0]):
+        A_tilde = np.vstack(proj_As)
+    else:
+        A_tilde = sp.sparse.vstack(proj_As)
 
     # form the matrix P + rho * A'A + rho A_tilde'A_tilde
     M = P + rho * AtA + rho * AtA_tilde
-    factor = sp.linalg.lu_factor(M)
+    if True: #not custom_solve:
+        # if M is sparse, cast to array
+        if sp.sparse.issparse(M):
+            M = M.toarray()
+        factor = sp.linalg.lu_factor(M)
+    else:
+        factor = None
+
+    if custom_factor is not None:
+        _, custom_solve = custom_factor(A, proj_As[0], rho)
 
     z = np.zeros(A.shape[0]) if warm is None else A @ warm
     u = np.zeros(A.shape[0])
@@ -124,8 +144,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
 
     d0 = sum(A.shape[0] for A in proj_As) + A.shape[0]
     d1 = A.shape[1]
-
-    At = np.array(A.T, order='C')
+            
+    At = np.array(A.T, order='C') if not sp.sparse.issparse(A) else A.T
 
     if constraint_func is not None:
         solver = construct_cvxpy_prob(
@@ -151,7 +171,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
         if x_update_cvxpy is not None:
             x = x_update_cvxpy(z,u)
         else:
-            x = update_x(factor=factor, A=A, At=At, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho)
+            x = update_x(factor=factor, A=A, At=At, A_tilde=A_tilde, q=q, z=z, u=u, z_tilde=z_tilde, u_tilde=u_tilde, rho=rho, custom_solve=custom_solve)
 
         # z-update: apply projection for cvar
         def over_relax_z_hat(x, z, alpha_over):  
@@ -246,6 +266,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns, max_iter=10_000, alpha=.5,
                         z_minus_u = z - u
                         q_both = q - rho * (A.T @ z_minus_u)
                         return solver(q_both)
+                if custom_solve is not None:
+                    _, custom_solve = custom_factor(A, proj_As[0], rho)
 
     # unscale
     A *= scale
