@@ -70,11 +70,11 @@ def update_x(
     # rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
     rhs = -q + rho * y_1(A, z, u, At) + rho * y_2(A_tilde, z_tilde, u_tilde)
     
-    x = factor_solve(factor, rhs) if not custom_solve is not None else custom_solve(rhs)
+    x = factor_solve(factor, rhs) # if not custom_solve is not None else custom_solve(rhs)
     
-    # if custom_solve is not None:
-    #     x_ = custom_solve(rhs)
-    #     err = np.linalg.norm(x - x_) / np.linalg.norm(x)
+    if custom_solve is not None:
+        x_ = custom_solve(rhs)
+        err = np.linalg.norm(x - x_) / np.linalg.norm(x)
 
     return x
 
@@ -134,7 +134,15 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns,
         factor = None
 
     if custom_factor is not None:
-        _, custom_solve = custom_factor(A, proj_As[0], rho)
+        _, custom_solve = custom_factor(A, proj_As[0], rho, scale)
+    else:
+        custom_solve = None
+
+    # check the custom solve on the columns of M
+    # for i in range(M.shape[0]):
+    #     e = np.zeros(M.shape[0])
+    #     e[i] = 1
+    #     assert np.allclose(custom_solve(M[:,i]), e)
 
     z = np.zeros(A.shape[0]) if warm is None else A @ warm
     u = np.zeros(A.shape[0])
@@ -255,6 +263,8 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns,
                 changed = False
             if changed: 
                 M = P + rho * AtA + rho * AtA_tilde
+                if sp.sparse.issparse(M):
+                    M = M.toarray()
                 factor = sp.linalg.lu_factor(M)
 
                 if constraint_func is not None:
@@ -267,7 +277,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns,
                         q_both = q - rho * (A.T @ z_minus_u)
                         return solver(q_both)
                 if custom_solve is not None:
-                    _, custom_solve = custom_factor(A, proj_As[0], rho)
+                    _, custom_solve = custom_factor(A, proj_As[0], rho, scale)
 
     # unscale
     A *= scale
