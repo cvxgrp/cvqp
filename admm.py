@@ -70,7 +70,7 @@ def update_x(
     # rhs = -q + rho * A.T @ (z - u) + rho * A_tilde.T @ (z_tilde - u_tilde)
     rhs = -q + rho * y_1(A, z, u, At) + rho * y_2(A_tilde, z_tilde, u_tilde)
     
-    x = factor_solve(factor, rhs) # if not custom_solve is not None else custom_solve(rhs)
+    x = factor_solve(factor, rhs) if not custom_solve is not None else custom_solve(rhs)
     
     if custom_solve is not None:
         x_ = custom_solve(rhs)
@@ -125,7 +125,7 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns,
 
     # form the matrix P + rho * A'A + rho A_tilde'A_tilde
     M = P + rho * AtA + rho * AtA_tilde
-    if True: #not custom_solve:
+    if not custom_factor:
         # if M is sparse, cast to array
         if sp.sparse.issparse(M):
             M = M.toarray()
@@ -263,9 +263,11 @@ def run_admm(P, q, A, beta, kappa, proj_As, proj_fns,
                 changed = False
             if changed: 
                 M = P + rho * AtA + rho * AtA_tilde
-                if sp.sparse.issparse(M):
-                    M = M.toarray()
-                factor = sp.linalg.lu_factor(M)
+                if not custom_factor:
+                    # if M is sparse, cast to array
+                    if sp.sparse.issparse(M):
+                        M = M.toarray()
+                    factor = sp.linalg.lu_factor(M)
 
                 if constraint_func is not None:
                     solver = construct_cvxpy_prob(
