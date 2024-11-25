@@ -907,6 +907,7 @@ prompt-toolkit = ">=3.0.41,<3.1.0"
 pygments = ">=2.4.0"
 stack-data = "*"
 traitlets = ">=5.13.0"
+typing-extensions = {version = ">=4.6", markers = "python_version < \"3.12\""}
 
 [package.extras]
 all = ["ipython[black,doc,kernel,matplotlib,nbconvert,nbformat,notebook,parallel,qtconsole]", "ipython[test,test-extra]"]
@@ -1600,6 +1601,23 @@ files = [
     {file = "mistune-3.0.2-py3-none-any.whl", hash = "sha256:71481854c30fdbc938963d3605b72501f5c10a9320ecd412c121c163a1c7d205"},
     {file = "mistune-3.0.2.tar.gz", hash = "sha256:fc7f93ded930c92394ef2cb6f04a8aabab4117a91449e72dcc8dfa646a508be8"},
 ]
+
+[[package]]
+name = "mosek"
+version = "10.2.8"
+description = "Python API for Mosek"
+optional = false
+python-versions = "<3.13,>=3.7"
+files = [
+    {file = "Mosek-10.2.8-cp37-abi3-macosx_10_15_x86_64.whl", hash = "sha256:4a08bc1c55bc837c2dbb16580463ed2d610f2e629275892d8199e744389008c0"},
+    {file = "Mosek-10.2.8-cp37-abi3-manylinux2014_x86_64.whl", hash = "sha256:e1aa87d962299178728ed60f963e3d1ad088322d02f46f621fa56bed545b5b17"},
+    {file = "Mosek-10.2.8-cp37-abi3-manylinux_2_29_aarch64.whl", hash = "sha256:6ec484caa8f2255636617aea4c09f4bba991325b3b4df46ba30a1b0f4849d719"},
+    {file = "Mosek-10.2.8-cp37-abi3-win_amd64.whl", hash = "sha256:1ec167c406e2d3a2cc2c701d079b8d431f36c3f2332828a2276edc88927aa33d"},
+    {file = "Mosek-10.2.8-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:3f73f6c4a0617da43fb9ba566d28c1a464d62b858c87829a5e6c4b4b6d1d01f7"},
+]
+
+[package.dependencies]
+numpy = "*"
 
 [[package]]
 name = "nbclient"
@@ -2882,6 +2900,17 @@ files = [
 ]
 
 [[package]]
+name = "typing-extensions"
+version = "4.12.2"
+description = "Backported and Experimental Type Hints for Python 3.8+"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
+    {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
+]
+
+[[package]]
 name = "uri-template"
 version = "1.3.0"
 description = "RFC 6570 URI Template Processor"
@@ -2974,5 +3003,5 @@ files = [
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.12"
-content-hash = "941fb55d87d4b98df4b0ea3b4d19de6da758faec3b1507113acd22f419d2218e"
+python-versions = ">=3.11,<3.13"
+content-hash = "9ca8de94474e1329f6b6c17bb499c893f3d309250842ee04babc59dfcb2f8dbd"
