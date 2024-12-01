@@ -14,6 +14,8 @@ matplotlib = "^3.9.2"
 ipykernel = "^6.29.5"
 jupyter = "^1.1.1"
 mosek = "^10.2.8"
+pyinstrument = "^5.0.0"
+pandas = "^2.2.3"
 
 [build-system]
 requires = ["poetry-core"]
