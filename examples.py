@@ -578,9 +578,8 @@ class ExperimentRunner:
         prob = cp.Problem(cp.Minimize(obj), constraints)
         
         # Time the solve
-        start_time = time.time()
         prob.solve(solver=solver, verbose=verbose)
-        solve_time = time.time() - start_time
+        solve_time = prob._solve_time
         
         if prob.status != 'optimal':
             raise RuntimeError(f"Problem failed to solve optimally. Status: {prob.status}")
@@ -690,7 +689,7 @@ def main():
 
     # Run and save
     runner.run_experiments()
-    runner.save_results("data/portfolio_test.pkl")
+    runner.save_results("data/portfolio_results.pkl")
 
 if __name__ == "__main__":
     main()
