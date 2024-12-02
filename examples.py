@@ -1,55 +1,27 @@
 """
-Script to benchmark solvers on CVaR-constrained Quadratic Programs (CVQP).
+Benchmark examples for CVaR-constrained Quadratic Programs (CVQP).
 
-This module implements three examples:
-- Portfolio optimization
-- Network traffic engineering
-- Supply chain optimization
-
-Each problem is formulated as a CVQP and solved using a custom ADMM solver
-and state-of-the-art commercial (MOSEK) and open-source (Clarabel) solvers 
-to benchmark performance.
+Implements portfolio optimization, network traffic, and supply chain problems
+to compare ADMM, MOSEK, and Clarabel solver performance.
 """
 
-import numpy as np
-import pandas as pd
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
-import pickle
-import cvxpy as cp
-import time
+from dataclasses import dataclass
 import logging
+import pickle
+import time
+import cvxpy as cp
+import numpy as np
 
+from admm import ADMM, ADMMConfig, ADMMResults
+from cvqp_utils import CVQPParams
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s PM: %(message)s',
+    format='%(asctime)s: %(message)s',
     datefmt='%b %d %H:%M:%S'
 )
-
-@dataclass
-class CVQPParams:
-    """
-    Parameters defining a CVQP instance.
-    
-    Args:
-        P: Quadratic cost matrix in objective.
-        q: Linear cost vector in objective.
-        A: Matrix for CVaR constraints.
-        B: Linear constraint matrix.
-        l: Lower bounds for Bx.
-        u: Upper bounds for Bx.
-        beta: List of probability levels for CVaR constraints.
-        kappa: List of CVaR limits for CVaR constraints.
-    """
-    P: np.ndarray         
-    q: np.ndarray        
-    A: np.ndarray  
-    B: np.ndarray       
-    l: np.ndarray      
-    u: np.ndarray      
-    beta: list[float]   
-    kappa: list[float]
-    
     
 @dataclass
 class BenchmarkResults:
@@ -68,8 +40,9 @@ class BenchmarkResults:
    solver: str
    n_vars: int
    n_scenarios: int
-   times: list[float | None]  # None for failed solves
-   status: list[str]          # Status for each solve
+   times: list[float | None] 
+   status: list[str]          
+   admm_results: list[ADMMResults | None] = None
    
    @property
    def success_rate(self) -> float:
@@ -146,17 +119,15 @@ class PortfolioOptimization(CVQProblem):
         gamma: float = 0.05,      
         nu: float = 0.1,         
         sigma: float = 0.2,     
-        beta1: float = 0.95,    
-        beta2: float = 0.99,    
-        kappa1: float = 0.15,    
-        kappa2: float = 0.20   
+        beta: float = 0.95,     
+        kappa: float = 0.15,    
     ):
         self.alpha = alpha
         self.gamma = gamma
         self.nu = nu
         self.sigma = sigma
-        self.beta = [beta1, beta2]
-        self.kappa = [kappa1, kappa2]
+        self.beta = beta
+        self.kappa = kappa
         
     def generate_return_matrix(self, n_vars: int, n_scenarios: int, rng: np.random.Generator) -> np.ndarray:
         """
@@ -259,7 +230,7 @@ class NetworkTraffic(CVQProblem):
         sigma2: float = 0.2   
     ):
         self.gamma = gamma
-        self.beta = [beta]
+        self.beta = beta
         self.K = K
         self.sigma1 = sigma1
         self.sigma2 = sigma2
@@ -331,7 +302,7 @@ class NetworkTraffic(CVQProblem):
         B = np.vstack(B_matrices)
         l = demands
         u = demands
-        kappa = [1.5 * np.max(tau)]  # kappa = 1.5 * max nominal delay
+        kappa = 1.5 * np.max(tau)  # kappa = 1.5 * max nominal delay
         
         return CVQPParams(
             P=P, q=q, A=A, B=B, l=l, u=u,
@@ -384,8 +355,8 @@ class SupplyChain(CVQProblem):
         self.u = u
         self.sigma_r = sigma_r
         self.sigma_s = sigma_s
-        self.beta = [beta]
-        self.kappa = [kappa]
+        self.beta = beta
+        self.kappa = kappa
         self.v = v
         self.theta = theta
     
@@ -528,7 +499,7 @@ class ExperimentRunner:
         instance_str = f"{problem_name}_{solver}_{n_vars}_{n_scenarios}_{instance_idx}"
         return self.base_seed + hash(instance_str) % (2**32)
     
-    def solve_instance(self, params: CVQPParams, solver: str) -> tuple[float | None, str]:
+    def solve_instance(self, params: CVQPParams, solver: str) -> tuple[float | None, str] | tuple[float | None, str, ADMMResults | None]:
         """
         Solve a CVQP instance with specified solver.
         
@@ -537,7 +508,8 @@ class ExperimentRunner:
             solver: Name of solver to use.
             
         Returns:
-            Tuple of (solve_time, status). If solver fails, time will be None.
+            For ADMM: Tuple of (solve_time, status, results). If solver fails, time and results will be None.
+            For others: Tuple of (solve_time, status). If solver fails, time will be None.
         """
         if solver in ["mosek", "clarabel"]:
             return self.solve_cvxpy(params, solver)
@@ -584,8 +556,7 @@ class ExperimentRunner:
             constraints.append(params.B[finite_ub] @ x <= params.u[finite_ub])
         
         # CVaR constraints
-        for i in range(len(params.beta)):
-            constraints.append(cp.cvar(params.A @ x, params.beta[i]) <= params.kappa[i])
+        constraints.append(cp.cvar(params.A @ x, params.beta) <= params.kappa)
         
         # Create and solve problem
         prob = cp.Problem(cp.Minimize(obj), constraints)
@@ -603,7 +574,7 @@ class ExperimentRunner:
             logging.warning(f"Solver failed with error: {str(e)}")
             return None, "error"
     
-    def solve_admm(self, params: CVQPParams) -> float:
+    def solve_admm(self, params: CVQPParams) -> tuple[float | None, str, ADMMResults | None]:
         """
         Solve using custom ADMM implementation.
         
@@ -611,15 +582,21 @@ class ExperimentRunner:
             params: Problem parameters.
             
         Returns:
-            Solution time in seconds.
+            Tuple of (solve_time, status). If solver fails, time will be None.
         """
-        # Implementation placeholder
-        pass
+        try:
+            solver = ADMM(params, ADMMConfig())
+            results = solver.solve()
+            return results.solve_time, results.problem_status, results
+        except Exception as e:
+            logging.warning(f"ADMM solver failed with error: {str(e)}")
+            return None, "error", None
     
     def run_experiments(self):
         """Run all experiments and store results."""
+        start_time = time.time()
         logging.info(
-            f"Benchmarking solvers ({', '.join(self.solvers)}) on {len(self.problems)} CVQP problems, "
+            f"Benchmarking solvers {', '.join(self.solvers)} on {len(self.problems)} CVQP problems, "
             f"{self.n_instances} runs per test"
         )
         
@@ -629,13 +606,18 @@ class ExperimentRunner:
                     for n_scenarios in self.n_scenarios_list:
                         solve_times = []
                         statuses = []
+                        admm_results = [] if solver == "admm" else None
                         
                         for i in range(self.n_instances):
                             seed = self.get_instance_seed(
                                 problem.name, solver, n_vars, n_scenarios, i
                             )
                             params = problem.generate_instance(n_vars, n_scenarios, seed=seed)
-                            solve_time, status = self.solve_instance(params, solver)
+                            if solver == "admm":
+                                solve_time, status, result = self.solve_instance(params, solver)
+                                admm_results.append(result)
+                            else:
+                                solve_time, status = self.solve_instance(params, solver)
                             solve_times.append(solve_time)
                             statuses.append(status)
                         
@@ -661,9 +643,11 @@ class ExperimentRunner:
                             n_vars=n_vars,
                             n_scenarios=n_scenarios,
                             times=solve_times,
-                            status=statuses
+                            status=statuses,
+                            admm_results=admm_results
                         ))
-        logging.info("Completed all experiments")
+        total_time_minutes = (time.time() - start_time) / 60
+        logging.info(f"Completed all experiments in {total_time_minutes:.1f} minutes")
     
     def save_results(self, filename: str):
         """
@@ -717,10 +701,11 @@ def main():
     # Create experiment runner with a grid of sizes
     runner = ExperimentRunner(
         problems=[portfolio],
-        n_instances=3,  # Small number for testing
-        n_vars_list=[100, 1000],
-        n_scenarios_list=[1000],
-        solvers=["clarabel", "mosek"]
+        n_instances=1,  # Small number for testing
+        n_vars_list=[1000],
+        n_scenarios_list=[10, 100, 1_000],
+        # solvers=["clarabel", "mosek", "admm"],
+        solvers=["admm"],
     )
 
     # Run and save
