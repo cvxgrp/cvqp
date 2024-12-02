@@ -618,7 +618,11 @@ class ExperimentRunner:
     
     def run_experiments(self):
         """Run all experiments and store results."""
-        logging.info(f"Benchmarking solvers ({', '.join(self.solvers)}) on {len(self.problems)} CVQP problems")
+        logging.info(
+            f"Benchmarking solvers ({', '.join(self.solvers)}) on {len(self.problems)} CVQP problems, "
+            f"{self.n_instances} runs per test"
+        )
+        
         for problem in self.problems:
             for solver in self.solvers:
                 for n_vars in self.n_vars_list:
