@@ -601,15 +601,11 @@ class ExperimentRunner:
     
     def run_experiments(self):
         """Run all experiments and store results."""
+        logging.info(f"Benchmarking solvers ({', '.join(self.solvers)}) on {len(self.problems)} CVQP problems")
         for problem in self.problems:
-            logging.info(f"Running experiments for {problem.name}")
-            
             for solver in self.solvers:
-                logging.info(f"Using solver: {solver}")
-                
                 for n_vars in self.n_vars_list:
                     for n_scenarios in self.n_scenarios_list:
-                        logging.info(f"Testing n_vars={n_vars}, n_scenarios={n_scenarios}")
                         solve_times = []
                         
                         for i in range(self.n_instances):
@@ -620,7 +616,12 @@ class ExperimentRunner:
                             solve_time = self.solve_instance(params, solver)
                             solve_times.append(solve_time)
                         
-                        # Store results for this configuration
+                        avg_time = np.mean(solve_times)
+                        std_time = np.std(solve_times)
+                        logging.info(
+                        f"problem={problem.name}, solver={solver}, n_vars={n_vars}, "
+                        f"n_scenarios={n_scenarios}, solve_time={avg_time:.3f}s (±{std_time:.3f}s)"
+)
                         self.results.append(BenchmarkResults(
                             problem=problem.name,
                             solver=solver,
@@ -628,6 +629,7 @@ class ExperimentRunner:
                             n_scenarios=n_scenarios,
                             times=solve_times
                         ))
+        logging.info("Completed all experiments")
     
     def save_results(self, filename: str):
         """
