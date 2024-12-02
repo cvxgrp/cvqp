@@ -53,37 +53,50 @@ class CVQPParams:
     
 @dataclass
 class BenchmarkResults:
-    """
-    Store benchmark results for a specific problem configuration.
-    
-    Args:
-        problem: Name of the problem being solved.
-        solver: Name of the solver used.
-        n_vars: Number of variables in the problem.
-        n_scenarios: Number of scenarios in the problem.
-        times: List of solve times for each instance.
-    """
-    problem: str
-    solver: str
-    n_vars: int
-    n_scenarios: int
-    times: list[float]
-    
-    @property
-    def avg_time(self) -> float:
-        return np.mean(self.times)
-    
-    @property
-    def std_time(self) -> float:
-        return np.std(self.times)
-    
-    @property
-    def min_time(self) -> float:
-        return np.min(self.times)
-    
-    @property
-    def max_time(self) -> float:
-        return np.max(self.times)
+   """
+   Store benchmark results for a specific problem configuration.
+   
+   Args:
+       problem: Name of the problem being solved.
+       solver: Name of the solver used.
+       n_vars: Number of variables in the problem.
+       n_scenarios: Number of scenarios in the problem.
+       times: List of solve times for each instance. None indicates a failed solve.
+       status: Status returned by solver for each solve attempt ('optimal', 'infeasible', etc.).
+   """
+   problem: str
+   solver: str
+   n_vars: int
+   n_scenarios: int
+   times: list[float | None]  # None for failed solves
+   status: list[str]          # Status for each solve
+   
+   @property
+   def success_rate(self) -> float:
+       """Return fraction of successful solves."""
+       return sum(1 for t in self.times if t is not None) / len(self.times)
+   
+   @property
+   def avg_time(self) -> float | None:
+       """
+       Average time of successful solves.
+       
+       Returns:
+           Mean solve time of successful solves, or None if all solves failed.
+       """
+       valid_times = [t for t in self.times if t is not None]
+       return np.mean(valid_times) if valid_times else None
+   
+   @property
+   def std_time(self) -> float | None:
+       """
+       Standard deviation of successful solve times.
+       
+       Returns:
+           Standard deviation of successful solve times, or None if all solves failed.
+       """
+       valid_times = [t for t in self.times if t is not None]
+       return np.std(valid_times) if valid_times else None
 
 
 class CVQProblem(ABC):
@@ -515,7 +528,7 @@ class ExperimentRunner:
         instance_str = f"{problem_name}_{solver}_{n_vars}_{n_scenarios}_{instance_idx}"
         return self.base_seed + hash(instance_str) % (2**32)
     
-    def solve_instance(self, params: CVQPParams, solver: str) -> float:
+    def solve_instance(self, params: CVQPParams, solver: str) -> tuple[float | None, str]:
         """
         Solve a CVQP instance with specified solver.
         
@@ -524,14 +537,14 @@ class ExperimentRunner:
             solver: Name of solver to use.
             
         Returns:
-            Solution time in seconds.
+            Tuple of (solve_time, status). If solver fails, time will be None.
         """
         if solver in ["mosek", "clarabel"]:
             return self.solve_cvxpy(params, solver)
-        else:  # "admm"
+        else:
             return self.solve_admm(params)
     
-    def solve_cvxpy(self, params: CVQPParams, solver: str, verbose: bool = False) -> float:
+    def solve_cvxpy(self, params: CVQPParams, solver: str, verbose: bool = False) -> tuple[float | None, str]:
         """
         Solve using CVXPY with specified solver.
         
@@ -541,7 +554,7 @@ class ExperimentRunner:
             verbose: Whether to print solver output.
             
         Returns:
-            Solution time in seconds.
+            Tuple of (solve_time, status). If solver fails, time will be None.
         """
         # Map solver string to CVXPY solver constant
         solver_map = {
@@ -576,15 +589,19 @@ class ExperimentRunner:
         
         # Create and solve problem
         prob = cp.Problem(cp.Minimize(obj), constraints)
-        
-        # Time the solve
-        prob.solve(solver=solver, verbose=verbose)
-        solve_time = prob._solve_time
-        
-        if prob.status != 'optimal':
-            raise RuntimeError(f"Problem failed to solve optimally. Status: {prob.status}")
-        
-        return solve_time
+        try:
+            prob.solve(solver=solver, verbose=verbose)
+            solve_time = prob._solve_time
+            status = prob.status
+            
+            if status != 'optimal':
+                return None, status
+                
+            return solve_time, status
+            
+        except Exception as e:
+            logging.warning(f"Solver failed with error: {str(e)}")
+            return None, "error"
     
     def solve_admm(self, params: CVQPParams) -> float:
         """
@@ -607,27 +624,40 @@ class ExperimentRunner:
                 for n_vars in self.n_vars_list:
                     for n_scenarios in self.n_scenarios_list:
                         solve_times = []
+                        statuses = []
                         
                         for i in range(self.n_instances):
                             seed = self.get_instance_seed(
                                 problem.name, solver, n_vars, n_scenarios, i
                             )
                             params = problem.generate_instance(n_vars, n_scenarios, seed=seed)
-                            solve_time = self.solve_instance(params, solver)
+                            solve_time, status = self.solve_instance(params, solver)
                             solve_times.append(solve_time)
+                            statuses.append(status)
                         
-                        avg_time = np.mean(solve_times)
-                        std_time = np.std(solve_times)
-                        logging.info(
-                        f"problem={problem.name}, solver={solver}, n_vars={n_vars}, "
-                        f"n_scenarios={n_scenarios}, solve_time={avg_time:.3f}s (±{std_time:.3f}s)"
-)
+                        # Only compute statistics for successful solves
+                        valid_times = [t for t in solve_times if t is not None]
+                        if valid_times:
+                            avg_time = np.mean(valid_times)
+                            std_time = np.std(valid_times)
+                            logging.info(
+                                f"problem={problem.name}, solver={solver}, n_vars={n_vars}, "
+                                f"n_scenarios={n_scenarios}, solve_time={avg_time:.3f}s (±{std_time:.3f}s) "
+                                f"[{len(valid_times)}/{len(solve_times)} succeeded]"
+                            )
+                        else:
+                            logging.warning(
+                                f"problem={problem.name}, solver={solver}, n_vars={n_vars}, "
+                                f"n_scenarios={n_scenarios}, all solves failed"
+                            )
+                        
                         self.results.append(BenchmarkResults(
                             problem=problem.name,
                             solver=solver,
                             n_vars=n_vars,
                             n_scenarios=n_scenarios,
-                            times=solve_times
+                            times=solve_times,
+                            status=statuses
                         ))
         logging.info("Completed all experiments")
     
