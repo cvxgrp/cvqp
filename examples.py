@@ -702,7 +702,7 @@ def main():
     runner = ExperimentRunner(
         problems=[portfolio],
         n_instances=1,  # Small number for testing
-        n_vars_list=[1000],
+        n_vars_list=[100],
         n_scenarios_list=[10, 100, 1_000],
         # solvers=["clarabel", "mosek", "admm"],
         solvers=["admm"],
@@ -710,7 +710,7 @@ def main():
 
     # Run and save
     runner.run_experiments()
-    runner.save_results("data/portfolio_results.pkl")
+    runner.save_results("data/cvqp_results.pkl")
 
 if __name__ == "__main__":
     main()
