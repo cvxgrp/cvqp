@@ -42,7 +42,7 @@ class ADMMConfig:
     """
     max_iter: int = 10_000
     alpha: float = 0.5
-    rho: float = 1.0
+    rho: float = 0.1
     abstol: float = 1e-4
     reltol: float = 1e-2
     alpha_over: float = 1.7
