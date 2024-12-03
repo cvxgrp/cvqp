@@ -701,11 +701,10 @@ def main():
     # Create experiment runner with a grid of sizes
     runner = ExperimentRunner(
         problems=[portfolio],
-        n_instances=1,  # Small number for testing
-        n_vars_list=[100],
+        n_instances=5,  # Small number for testing
+        n_vars_list=[100, 1000],
         n_scenarios_list=[10, 100, 1_000],
-        # solvers=["clarabel", "mosek", "admm"],
-        solvers=["admm"],
+        solvers=["clarabel", "mosek", "admm"],
     )
 
     # Run and save
