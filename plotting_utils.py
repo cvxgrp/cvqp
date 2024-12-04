@@ -58,7 +58,7 @@ def plot_solver_comparison(results, problem_name, n_vars):
     ax.set_title(f'{problem_name.title()} example (n={n_vars})')
     ax.grid(True, which='major', linestyle='-', alpha=0.2)
     ax.grid(True, which='minor', linestyle=':', alpha=0.2)
-    ax.legend(frameon=True, fancybox=True, shadow=True)
+    ax.legend(frameon=True, fancybox=True)
     
     plt.tight_layout()
     return fig
