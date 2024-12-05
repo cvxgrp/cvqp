@@ -1,7 +1,5 @@
 import numpy as np
 import cvxpy as cp
-import sys
-sys.path.append('./build')
 import mybindings
 
 def proj_sum_largest_cvxpy(z: np.ndarray, k: int, alpha) -> np.ndarray:
@@ -152,6 +150,6 @@ def proj_sum_largest_cpp(
     Projects the vector 'z' such that the sum of its largest 'k' elements is less than or equal to 'alpha'.
     """
     z, sorted_inds = _sort_z(z)
-    _ = mybindings.sum_largest_proj(z, k, alpha, k, 0, len(z), False)
-    z = _unsort_z(z, sorted_inds)
+    z_projected, _, _, _ = mybindings.sum_largest_proj(z, k, alpha, k, 0, len(z), False)
+    z = _unsort_z(z_projected, sorted_inds)
     return z

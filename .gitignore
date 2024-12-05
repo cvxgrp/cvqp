@@ -1,1 +1,10 @@
+# Build artifacts
+build/
+*.so
+*.o
+*.obj
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
