@@ -1,8 +1,7 @@
 """
-Benchmark examples for CVaR-constrained Quadratic Programs (CVQP).
-
-Implements portfolio optimization, network traffic, and supply chain problems
-to compare ADMM, MOSEK, and Clarabel solver performance.
+Script to benchmark CVQP solver againts MOSEK and Clarabel on a series of 
+porblems from different domains: portfolio optimization, network traffic, and
+supply chain contract selection.
 """
 
 from abc import ABC, abstractmethod
@@ -225,9 +224,9 @@ class NetworkTraffic(CVQProblem):
         self,
         gamma: float = 0.1,     
         beta: float = 0.95,      
-        K: int = 50,            
-        sigma1: float = 0.1,    
-        sigma2: float = 0.2   
+        K: int = 10,          
+        sigma1: float = 0.05,  
+        sigma2: float = 0.1 
     ):
         self.gamma = gamma
         self.beta = beta
@@ -235,7 +234,7 @@ class NetworkTraffic(CVQProblem):
         self.sigma1 = sigma1
         self.sigma2 = sigma2
     
-    def generate_path_structure(self, n_vars: int, rng: np.random.Generator) -> tuple[np.ndarray, list[np.ndarray]]:
+    def generate_path_structure(self, n_vars: int, rng: np.random.Generator) -> tuple[np.ndarray, list[np.ndarray], np.ndarray]:
         """
         Generate paths and their mapping to source-destination pairs.
         
@@ -244,7 +243,10 @@ class NetworkTraffic(CVQProblem):
             rng: Random number generator.
             
         Returns:
-            Tuple of demands array and list of constraint matrices.
+            Tuple containing:
+                - demands array
+                - list of constraint matrices
+                - base hop counts array
         """
         # Generate demands
         demands = 1 + 0.5 * rng.normal(0, 1, self.K)
@@ -252,14 +254,17 @@ class NetworkTraffic(CVQProblem):
         # Generate base hop counts
         base_hops = 3 + np.floor(rng.exponential(scale=1/0.3, size=self.K)) + 1
         
+        # Create constraint matrices 
+        B_matrices = [
+            np.eye(n_vars)  # For x >= 0 constraints
+        ]
+        
         # Allocate paths to pairs (roughly equal distribution)
         paths_per_pair = n_vars // self.K
         remainder = n_vars % self.K
-        
-        # Create constraint matrices for each pair
-        B_matrices = []
         current_path = 0
-        
+
+        # Add flow conservation constraints
         for k in range(self.K):
             n_paths = paths_per_pair + (1 if k < remainder else 0)
             B_k = np.zeros(n_vars)
@@ -267,7 +272,7 @@ class NetworkTraffic(CVQProblem):
             B_matrices.append(B_k)
             current_path += n_paths
             
-        return demands, B_matrices
+        return demands, B_matrices, base_hops
     
     def generate_instance(self, n_vars: int, n_scenarios: int, seed: int | None = None) -> CVQPParams:
         """
@@ -282,27 +287,47 @@ class NetworkTraffic(CVQProblem):
             CVQPParams instance containing the generated problem parameters.
         """
         rng = np.random.default_rng(seed)
-        demands, B_matrices = self.generate_path_structure(n_vars, rng)
+        demands, B_matrices, base_hops = self.generate_path_structure(n_vars, rng)
         
-        # Generate nominal delays
-        base_delays = rng.normal(0, 1, n_vars)
-        tau = base_delays * (1 + 0.1 * rng.normal(0, 1, n_vars))
+        # Generate hop counts for each path
+        current_path = 0
+        hop_counts = np.zeros(n_vars)
+        paths_per_pair = n_vars // self.K
+        remainder = n_vars % self.K
+        
+        for k in range(self.K):
+            n_paths = paths_per_pair + (1 if k < remainder else 0)
+            # Use exp() to ensure variations are positive
+            path_variation = np.exp(0.2 * rng.normal(0, 1, n_paths))
+            hop_counts[current_path:current_path + n_paths] = np.ceil(base_hops[k] * path_variation)
+            current_path += n_paths
+        
+        # Generate nominal delays based on hop counts
+        # Use exp() to ensure delay multipliers are positive
+        tau = hop_counts * np.exp(0.1 * rng.normal(0, 1, n_vars))
         
         # Generate delay matrix
         D = np.zeros((n_scenarios, n_vars))
         for i in range(n_scenarios):
             eta = rng.normal(0, self.sigma2)
             epsilon = rng.normal(0, self.sigma1, n_vars)
-            D[i] = tau * (1 + epsilon + eta)
+            # Use exp() for perturbations to ensure positive delays
+            D[i] = tau * np.exp(epsilon + eta)
         
         # CVQP parameters
         P = self.gamma * np.eye(n_vars)
         q = tau.copy()  # Use nominal delays as costs
         A = D
         B = np.vstack(B_matrices)
-        l = demands
-        u = demands
-        kappa = 1.5 * np.max(tau)  # kappa = 1.5 * max nominal delay
+        l = np.concatenate([
+            np.zeros(n_vars),  # x >= 0
+            demands           # flow conservation
+        ])
+        u = np.concatenate([
+            np.inf * np.ones(n_vars),  # x <= inf (non-negativity)
+            np.inf * np.ones(self.K)   # Σx_j <= inf (flow conservation)
+        ])
+        kappa = 4.0 * np.max(tau)  # kappa = 4 * max nominal delay
         
         return CVQPParams(
             P=P, q=q, A=A, B=B, l=l, u=u,
@@ -701,10 +726,11 @@ def main():
     # Create experiment runner with a grid of sizes
     runner = ExperimentRunner(
         problems=[portfolio],
-        n_instances=5,  # Small number for testing
-        n_vars_list=[100, 1000],
-        n_scenarios_list=[10, 100, 1_000],
-        solvers=["clarabel", "mosek", "admm"],
+        n_instances=1,  # Small number for testing
+        n_vars_list=[5000],
+        n_scenarios_list=[100, 300, 1_000, 3_000, 10_000, 30_000, 100_000],
+        # solvers=["clarabel", "mosek", "admm"],
+        solvers=["admm"],
     )
 
     # Run and save
