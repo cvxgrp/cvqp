@@ -12,7 +12,7 @@ import cvxpy as cp
 import numpy as np
 import scipy as sp
 
-from cvar_proj import proj_sum_largest
+from benchmark_sum_largest_proj import proj_sum_largest
 from cvqp_utils import CVQPParams
 
 # Configure logging
