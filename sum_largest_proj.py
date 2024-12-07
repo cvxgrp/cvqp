@@ -35,3 +35,20 @@ def proj_sum_largest(z: np.ndarray, k: int, alpha: float) -> np.ndarray:
     x[sorted_inds] = z_projected
 
     return x
+
+
+if __name__ == "__main__":
+    # Example usage
+    # Create a sample vector where sum of 2 largest elements (6 + 5 = 11) exceeds alpha = 7
+    z = np.array([6.0, 2.0, 5.0, 4.0, 1.0])
+    k = 2
+    alpha = 7.0
+
+    # Apply projection
+    result = proj_sum_largest(z, k, alpha)
+
+    # Print results
+    print("Original vector:", z)
+    print(f"Sum of {k} largest elements before:", sum(sorted(z, reverse=True)[:k]))
+    print("\nProjected vector:", result)
+    print(f"Sum of {k} largest elements after:", sum(sorted(result, reverse=True)[:k]))
