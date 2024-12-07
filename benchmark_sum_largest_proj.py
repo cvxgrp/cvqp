@@ -233,12 +233,8 @@ class ProjectionBenchmark:
                 for solver in solvers:
                     times = []
                     statuses = []
-                    solver_failed = False
 
                     for i in range(n_instances):
-                        if solver_failed:
-                            break
-
                         seed = self.get_reproducible_seed(m, tau, i)
                         instance = self.generate_instance(m, tau, seed)
 
@@ -251,12 +247,6 @@ class ProjectionBenchmark:
 
                         times.append(solve_time)
                         statuses.append(status)
-
-                        if np.isnan(solve_time):
-                            solver_failed = True
-                            logging.warning(
-                                f"    {solver} failed on instance {i}. Skipping remaining instances."
-                            )
 
                     result = ProjectionResults(
                         solver=solver, m=m, tau=tau, times=times, status=statuses
