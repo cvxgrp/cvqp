@@ -327,7 +327,7 @@ if __name__ == "__main__":
 
     # Set up experiment
     tau_list = [0.1, 0.9]
-    m_list = [int(x) for x in [1e3, 3e3, 1e4]]  # [int(x) for x in [1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]]
+    m_list = [int(x) for x in [1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]]
     n_instances = 50
     solvers = ["Ours", "MOSEK", "CLARABEL"]
 
