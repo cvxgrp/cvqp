@@ -1,5 +1,9 @@
 """
-Script to benchmark our sum-k-largest projection.
+Benchmark script for evaluating performance of sum-k-largest projection algorithm.
+
+This script compares different solvers' performance on the sum-k-largest projection
+problem, including our custom implementation against standard solvers like MOSEK and 
+CLARABEL.
 """
 
 import numpy as np
@@ -13,15 +17,12 @@ import warnings
 
 from sum_largest_proj import proj_sum_largest
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s: %(message)s", datefmt="%b %d %H:%M:%S"
 )
 
-# Suppress CVXPY warnings
 warnings.filterwarnings("ignore", module="cvxpy")
 
-# Define available solvers and their time limits
 TIME_LIMIT = 3600
 SOLVER_CONFIGS = {
     "MOSEK": {"mosek_params": {"MSK_DPAR_OPTIMIZER_MAX_TIME": TIME_LIMIT}},
@@ -35,13 +36,16 @@ class Projection:
     """
     Single instance of a sum-k-largest projection problem.
 
+    The problem involves projecting a vector onto the set where the sum of its
+    k largest elements is bounded by d.
+
     Args:
-        v: Input vector to project.
-        k: Number of largest elements to consider.
-        d: Upper bound on sum of k largest elements.
-        tau: Scaling factor for the bound d.
-        m: Number of scenarios (length of vector v).
-        seed: Random seed used to generate this instance.
+        v: Input vector to project
+        k: Number of largest elements to consider in sum constraint
+        d: Upper bound on sum of k largest elements
+        tau: Hardness parameter in (0,1) controlling problem difficulty
+        m: Length of vector v (number of scenarios)
+        seed: Random seed used to generate this instance for reproducibility
     """
 
     v: np.ndarray
@@ -55,14 +59,17 @@ class Projection:
 @dataclass
 class ProjectionResults:
     """
-    Store benchmark results for a specific problem configuration.
+    Results from benchmarking a solver on multiple problem instances.
+
+    Stores solve times and success information for a specific solver on
+    multiple instances of a problem with fixed size (m) and hardness (tau).
 
     Args:
-        solver: Name of the solver used.
-        m: Number of scenarios in the problem.
-        tau: Scaling factor used in problem generation.
-        times: List of solve times for each instance. np.nan indicates a failed solve.
-        status: Status returned by solver for each solve attempt.
+        solver: Name of the solver used
+        m: Number of scenarios in the tested problems
+        tau: Hardness parameter used in problem generation
+        times: List of solve times (np.nan indicates failed solve)
+        status: List of solver status strings for each attempt
     """
 
     solver: str
@@ -73,59 +80,63 @@ class ProjectionResults:
 
     @property
     def success_rate(self) -> float:
-        """Return fraction of successful solves."""
+        """Return the fraction of successful solves out of all attempts."""
         return np.sum(~np.isnan(self.times)) / len(self.times)
 
     @property
     def avg_time(self) -> float:
         """
-        Average time of successful solves.
+        Calculate the average time of successful solves.
 
         Returns:
-            Mean solve time of successful solves, or np.nan if all solves failed.
+            Mean solve time of successful solves, or np.nan if all solves failed
         """
         return np.nanmean(self.times)
 
     @property
     def std_time(self) -> float:
         """
-        Standard deviation of successful solve times.
+        Calculate the standard deviation of successful solve times.
 
         Returns:
-            Standard deviation of successful solve times, or np.nan if all solves failed.
+            Standard deviation of successful solve times, or np.nan if all solves failed
         """
         return np.nanstd(self.times)
 
     @property
     def num_success(self) -> int:
-        """Number of successful solves."""
+        """Return the total number of successful solves."""
         return int(np.sum(~np.isnan(self.times)))
 
     @property
     def num_total(self) -> int:
-        """Total number of solve attempts."""
+        """Return the total number of solve attempts."""
         return len(self.times)
 
 
 class ProjectionBenchmark:
-    """Class to manage benchmarking experiments for sum-k-largest projection problems."""
-
-    def __init__(self):
-        """Initialize the benchmark class."""
-        pass
+    """
+    Benchmark manager for sum-k-largest projection problems.
+    
+    Handles generation of test instances, running solvers, collecting results,
+    and saving/loading benchmark data.
+    """
 
     def solve_instance_cvxpy(
         self, instance: Projection, solver: str
     ) -> tuple[float, str]:
         """
-        Solve sum-k-largest projection problem using CVXPY.
+        Solve a projection instance using a CVXPY-supported solver.
+
+        Formulates the problem using CVXPY's interface and solves it with
+        the specified solver, measuring the solution time.
 
         Args:
-            instance: Projection instance containing problem parameters
-            solver: Name of the CVXPY solver to use
+            instance: Problem instance to solve
+            solver: Name of CVXPY-supported solver to use
 
         Returns:
-            Tuple containing (solve_time, status). solve_time is np.nan if the solve failed
+            Tuple of (solve_time, status). solve_time is np.nan if solve failed
         """
         try:
             x = cp.Variable(instance.v.shape)
@@ -154,13 +165,13 @@ class ProjectionBenchmark:
 
     def solve_instance_custom(self, instance: Projection) -> tuple[float, str]:
         """
-        Solve sum-k-largest projection problem using custom C++ implementation.
+        Solve a projection instance using our custom C++ implementation.
 
         Args:
-            instance: Projection instance containing problem parameters
+            instance: Problem instance to solve
 
         Returns:
-            Tuple containing (solve_time, status). solve_time is np.nan if the solve failed
+            Tuple of (solve_time, status). solve_time is np.nan if solve failed
         """
         try:
             start_time = time.time()
@@ -175,13 +186,16 @@ class ProjectionBenchmark:
         """
         Generate a random sum-k-largest projection problem instance.
 
+        Creates a problem instance with uniformly distributed vector entries
+        and a CVaR-style constraint on the sum of largest elements.
+
         Args:
-            m: Number of scenarios
-            tau: Scaling factor for the bound d
+            m: Number of scenarios (vector length)
+            tau: Hardness parameter in (0,1)
             seed: Random seed for reproducibility
 
         Returns:
-            Projection instance containing the generated problem parameters
+            Generated problem instance with specified parameters
         """
         rng = np.random.RandomState(seed)
         beta = 0.95
@@ -193,13 +207,31 @@ class ProjectionBenchmark:
         return Projection(v=v, k=k, d=d, tau=tau, m=m, seed=seed)
 
     def get_reproducible_seed(self, m: int, tau: float, instance: int) -> int:
-        """Generate a reproducible seed within valid range."""
+        """
+        Generate a reproducible seed for a specific problem configuration.
+
+        Args:
+            m: Number of scenarios
+            tau: Hardness parameter
+            instance: Instance number
+
+        Returns:
+            Deterministic seed value within valid range
+        """
         param_str = f"{m}_{tau}_{instance}"
         return abs(hash(param_str)) % (2**32 - 1)
 
     @staticmethod
     def format_time_s(t: float) -> str:
-        """Format time in seconds using scientific notation."""
+        """
+        Format a time value in seconds using scientific notation.
+
+        Args:
+            t: Time value in seconds
+
+        Returns:
+            Formatted string with time in scientific notation
+        """
         return f"{t:.2e}s"
 
     def run_benchmark(
@@ -210,11 +242,14 @@ class ProjectionBenchmark:
         solvers: list[str],
     ) -> list[ProjectionResults]:
         """
-        Run complete benchmark experiment.
+        Run complete benchmark experiment across all configurations.
+
+        Tests each solver on multiple random instances for each combination
+        of problem size (m) and hardness parameter (tau).
 
         Args:
             m_list: List of scenario counts to test
-            tau_list: List of tau values to test
+            tau_list: List of hardness parameters to test
             n_instances: Number of random instances per configuration
             solvers: List of solvers to benchmark
 
@@ -266,14 +301,28 @@ class ProjectionBenchmark:
 
     @staticmethod
     def save_results(results: list[ProjectionResults], filename: str):
-        """Save benchmark results to pickle file."""
+        """
+        Save benchmark results to a pickle file.
+
+        Args:
+            results: List of benchmark results to save
+            filename: Path where results should be saved
+        """
         Path("data").mkdir(exist_ok=True)
         with open(filename, "wb") as f:
             pickle.dump(results, f)
 
     @staticmethod
     def load_results(filename: str) -> list[ProjectionResults]:
-        """Load benchmark results from pickle file."""
+        """
+        Load benchmark results from a pickle file.
+
+        Args:
+            filename: Path to the pickle file containing results
+
+        Returns:
+            List of loaded ProjectionResults objects
+        """
         with open(filename, "rb") as f:
             return pickle.load(f)
 
@@ -288,9 +337,12 @@ class ProjectionBenchmark:
         """
         Run a complete benchmark experiment and save results.
 
+        Orchestrates the entire benchmarking process, including logging 
+        configuration details, running benchmarks, and saving results.
+
         Args:
             m_list: List of scenario counts to test
-            tau_list: List of tau values to test
+            tau_list: List of hardness parameters to test
             n_instances: Number of random instances per configuration
             solvers: List of solvers to benchmark
             output_file: Path to save the results
@@ -301,18 +353,15 @@ class ProjectionBenchmark:
         logging.info(f"Testing solvers: {solvers}")
         logging.info(f"Running {n_instances} instances per configuration")
 
-        start_time = time.time()
         results = self.run_benchmark(m_list, tau_list, n_instances, solvers)
-        total_time = (time.time() - start_time) / 60
 
-        logging.info(f"\nCompleted all experiments in {total_time:.1f} minutes")
+        logging.info("All experiments completed!")
         self.save_results(results, output_file)
 
 
 if __name__ == "__main__":
     benchmark = ProjectionBenchmark()
 
-    # Set up experiment
     tau_list = [0.1, 0.9]
     m_list = [int(x) for x in [1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]]
     n_instances = 50
