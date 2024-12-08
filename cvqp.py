@@ -1,5 +1,9 @@
 """
-CVQP: A solver for CVaR-constrained quadratic programs.
+CVQP: A solver for Conditional Value-at-Risk (CVaR) constrained quadratic programs.
+
+This module implements an ADMM-based solver for quadratic optimization problems with 
+CVaR constraints. It uses adaptive penalty updates and over-relaxation for improved 
+convergence properties.
 """
 
 from dataclasses import dataclass
@@ -23,17 +27,17 @@ class CVQPConfig:
     Configuration parameters for the CVQP solver.
 
     Args:
-        max_iter: Maximum number of iterations
-        alpha: Gradient step size parameter
-        rho: Augmented Lagrangian parameter
-        abstol: Absolute tolerance for convergence
-        reltol: Relative tolerance for convergence
-        alpha_over: Over-relaxation parameter
-        print_freq: Frequency of printing iteration stats
-        mu: Parameter for adaptive rho update
-        rho_incr: Factor for increasing rho
-        rho_decr: Factor for decreasing rho
-        verbose: Whether to print progress information
+        max_iter: Maximum number of iterations before termination
+        alpha: Step size parameter for gradient updates
+        rho: Initial penalty parameter for augmented Lagrangian
+        abstol: Absolute tolerance for primal and dual residuals
+        reltol: Relative tolerance for primal and dual residuals
+        alpha_over: Over-relaxation parameter for improved convergence (typically in [1.5, 1.8])
+        print_freq: Frequency of iteration status updates
+        mu: Threshold parameter for adaptive rho updates
+        rho_incr: Multiplicative factor for increasing rho
+        rho_decr: Multiplicative factor for decreasing rho
+        verbose: If True, prints detailed convergence information
     """
 
     max_iter: int = 10_000
@@ -51,7 +55,21 @@ class CVQPConfig:
 
 @dataclass
 class CVQPResults:
-    """Results from the CVQP solver."""
+    """
+    Results from the CVQP solver.
+
+    Attributes:
+        x: Optimal solution vector
+        iter_count: Number of iterations performed
+        solve_time: Total solve time in seconds
+        objval: List of objective values at each iteration
+        r_norm: List of primal residual norms
+        s_norm: List of dual residual norms
+        eps_pri: List of primal feasibility tolerances
+        eps_dual: List of dual feasibility tolerances
+        rho: List of penalty parameter values
+        problem_status: Final status of the solve ("optimal", "unknown", etc.)
+    """
 
     x: np.ndarray
     iter_count: int
@@ -67,46 +85,73 @@ class CVQPResults:
 
 class CVQP:
     """
-    CVQP solver using ADMM (alternating direction method of multipliers) with adaptive penalty parameter updates and over-relaxation.
+    CVQP solver using ADMM with adaptive penalty parameter updates and over-relaxation.
+
+    This solver handles quadratic programs with CVaR constraints using the alternating
+    direction method of multipliers (ADMM). It includes features for automatic penalty
+    parameter adaptation and over-relaxation to improve convergence speed.
     """
 
     def __init__(self, params: CVQPParams, options: CVQPConfig = CVQPConfig()):
+        """
+        Initialize the CVQP solver.
+
+        Args:
+            params: Problem parameters including objective and constraint matrices
+            options: Solver configuration options
+        """
         self.params = params
         self.options = options
         self.initialize_problem()
 
     def initialize_problem(self):
-        """Initialize problem by scaling and precomputing matrices."""
+        """
+        Initialize problem by scaling data and precomputing frequently used matrices.
+        Improves numerical stability and computation efficiency.
+        """
         self.scale_problem()
         self.setup_cvar_params()
         self.precompute_matrices()
 
     def scale_problem(self):
-        """Scale problem data for better numerical stability."""
+        """Scale problem data to improve numerical conditioning."""
         self.scale = max(-self.params.A.min(), self.params.A.max())
         self.params.A /= self.scale
         self.params.q /= self.scale
         self.params.P /= self.scale
 
     def setup_cvar_params(self):
-        """Setup CVaR-specific parameters."""
+        """Initialize CVaR-specific parameters based on problem dimensions."""
         self.m = self.params.A.shape[0]
         self.k = int((1 - self.params.beta) * self.m)
         self.alpha = self.params.kappa * self.k / self.scale
 
     def precompute_matrices(self):
-        """Precompute matrices used in optimization."""
+        """Precompute and cache frequently used matrix products."""
         self.AtA = self.params.A.T @ self.params.A
         self.BtB = self.params.B.T @ self.params.B
         self.update_M_factor(self.options.rho)
 
     def update_M_factor(self, rho: float):
-        """Update and factorize matrix M."""
+        """
+        Update and factorize the matrix M used in the linear system solve.
+
+        Args:
+            rho: Current penalty parameter value
+        """
         self.M = self.params.P + rho * (self.AtA + self.BtB)
         self.factor = sp.linalg.lu_factor(self.M)
 
     def initialize_variables(self, warm_start: np.ndarray | None) -> tuple:
-        """Initialize optimization variables."""
+        """
+        Initialize optimization variables and results structure.
+
+        Args:
+            warm_start: Initial guess for x, if provided
+
+        Returns:
+            Tuple of (z, u, z_tilde, u_tilde, results) containing initial values
+        """
         if warm_start is None:
             x = np.zeros(self.params.P.shape[0])
             z = np.zeros(self.m)
@@ -141,7 +186,19 @@ class CVQP:
         u_tilde: np.ndarray,
         rho: float,
     ) -> np.ndarray:
-        """Perform x-update step."""
+        """
+        Perform x-minimization step of ADMM.
+
+        Args:
+            z: First auxiliary variable
+            u: First dual variable
+            z_tilde: Second auxiliary variable
+            u_tilde: Second dual variable
+            rho: Current penalty parameter
+
+        Returns:
+            Updated x variable
+        """
         rhs = (
             -self.params.q
             + rho * (self.params.A.T @ (z - u))
@@ -152,14 +209,36 @@ class CVQP:
     def z_update(
         self, x: np.ndarray, z: np.ndarray, u: np.ndarray, alpha_over: float
     ) -> np.ndarray:
-        """Perform z-update step."""
+        """
+        Perform z-minimization step of ADMM with over-relaxation.
+
+        Args:
+            x: Current primal variable
+            z: Current z variable
+            u: Current dual variable
+            alpha_over: Over-relaxation parameter
+
+        Returns:
+            Updated z variable after projection
+        """
         z_hat = alpha_over * (self.params.A @ x) + (1 - alpha_over) * z + u
         return proj_sum_largest(z_hat, self.k, self.alpha)
 
     def z_tilde_update(
         self, x: np.ndarray, z_tilde: np.ndarray, u_tilde: np.ndarray, alpha_over: float
     ) -> np.ndarray:
-        """Perform z_tilde-update step."""
+        """
+        Perform z_tilde-minimization step of ADMM with over-relaxation.
+
+        Args:
+            x: Current primal variable
+            z_tilde: Current z_tilde variable
+            u_tilde: Current dual variable
+            alpha_over: Over-relaxation parameter
+
+        Returns:
+            Updated z_tilde variable after projection
+        """
         z_hat_tilde = (
             alpha_over * self.params.B @ x + (1 - alpha_over) * z_tilde + u_tilde
         )
@@ -174,7 +253,18 @@ class CVQP:
         z_tilde_old: np.ndarray,
         rho: float,
     ) -> tuple:
-        """Compute primal and dual residuals."""
+        """
+        Compute primal and dual residuals for convergence checking.
+
+        Args:
+            x: Current primal variable
+            z, z_tilde: Current auxiliary variables
+            z_old, z_tilde_old: Previous auxiliary variables
+            rho: Current penalty parameter
+
+        Returns:
+            Tuple of (r_norm, s_norm, Ax, At_z) containing residual norms and intermediate products
+        """
         Ax = self.params.A @ x
         r = np.concatenate([Ax - z, self.params.B @ x - z_tilde])
         r_norm = np.linalg.norm(r)
@@ -194,7 +284,18 @@ class CVQP:
         At_z: np.ndarray,
         rho: float,
     ) -> tuple:
-        """Compute convergence tolerances."""
+        """
+        Compute primal and dual feasibility tolerances.
+
+        Args:
+            Ax: Product of A and x
+            z, z_tilde: Current auxiliary variables
+            At_z: Transposed product
+            rho: Current penalty parameter
+
+        Returns:
+            Tuple of (eps_pri, eps_dual) containing primal and dual tolerances
+        """
         d0 = self.params.A.shape[0] + self.params.B.shape[0]
         d1 = self.params.A.shape[1]
 
@@ -210,7 +311,18 @@ class CVQP:
     def check_convergence(
         self, r_norm: float, s_norm: float, eps_pri: float, eps_dual: float
     ) -> bool:
-        """Check if convergence criteria are met."""
+        """
+        Check if convergence criteria are satisfied.
+
+        Args:
+            r_norm: Primal residual norm
+            s_norm: Dual residual norm
+            eps_pri: Primal feasibility tolerance
+            eps_dual: Dual feasibility tolerance
+
+        Returns:
+            True if both primal and dual residuals are within tolerances
+        """
         return r_norm <= eps_pri and s_norm <= eps_dual
 
     def update_rho(
@@ -221,7 +333,18 @@ class CVQP:
         u: np.ndarray,
         u_tilde: np.ndarray,
     ) -> tuple:
-        """Update penalty parameter rho if needed."""
+        """
+        Update penalty parameter using adaptive scheme.
+
+        Args:
+            rho: Current penalty parameter
+            r_norm: Primal residual norm
+            s_norm: Dual residual norm
+            u, u_tilde: Current dual variables
+
+        Returns:
+            Tuple of (rho, u, u_tilde) containing updated values
+        """
         if r_norm > self.options.mu * s_norm:
             rho *= self.options.rho_incr
             u /= self.options.rho_incr
@@ -235,7 +358,7 @@ class CVQP:
         return rho, u, u_tilde
 
     def setup_progress_display(self):
-        """Initialize the progress display header."""
+        """Initialize progress display formatting and headers."""
         self.header_titles = [
             "iter",
             "r_norm",
@@ -251,7 +374,6 @@ class CVQP:
         )
         self.separator = "=" * 83
 
-        # Print initial header
         logging.info(self.separator)
         title = "CVQP solver"
         logging.info(title.center(len(self.separator)))
@@ -269,7 +391,18 @@ class CVQP:
         rho: float,
         objval: float,
     ):
-        """Print a single iteration's results."""
+        """
+        Print iteration results in formatted output.
+
+        Args:
+            iteration: Current iteration number
+            r_norm: Primal residual norm
+            eps_pri: Primal feasibility tolerance
+            s_norm: Dual residual norm
+            eps_dual: Dual feasibility tolerance
+            rho: Current penalty parameter
+            objval: Current objective value
+        """
         logging.info(
             self.row_format.format(
                 iteration, r_norm, eps_pri, s_norm, eps_dual, rho, objval
@@ -277,7 +410,12 @@ class CVQP:
         )
 
     def print_final_results(self, results: CVQPResults):
-        """Print final summary results."""
+        """
+        Print final optimization results summary.
+
+        Args:
+            results: Optimization results containing final values and statistics
+        """
         logging.info(self.separator)
         logging.info(f"Optimal value: {results.objval[-1]:.3e}.")
         logging.info(f"Solver took {results.solve_time:.2f} seconds.")
@@ -293,7 +431,18 @@ class CVQP:
         eps_dual: float,
         rho: float,
     ):
-        """Record iteration results."""
+        """
+        Record the results of the current iteration for convergence analysis.
+
+        Args:
+            results: Results object to store iteration data
+            x: Current primal variable
+            r_norm: Primal residual norm
+            s_norm: Dual residual norm
+            eps_pri: Primal feasibility tolerance
+            eps_dual: Dual feasibility tolerance
+            rho: Current penalty parameter
+        """
         objval = (0.5 * np.dot(x, self.params.P @ x) + self.params.q @ x) * self.scale
         results.objval.append(objval)
         results.r_norm.append(r_norm)
@@ -303,13 +452,21 @@ class CVQP:
         results.rho.append(rho)
 
     def unscale_problem(self):
-        """Unscale problem data."""
+        """Restore original problem scaling for final results."""
         self.params.A *= self.scale
         self.params.q *= self.scale
         self.params.P *= self.scale
 
     def solve(self, warm_start: np.ndarray | None = None) -> CVQPResults:
-        """Solve the optimization problem using CVQP."""
+        """
+        Solve the optimization problem using ADMM algorithm.
+
+        Args:
+            warm_start: Optional initial guess for x variable
+
+        Returns:
+            CVQPResults object containing optimal solution and convergence information
+        """
         start_time = time.time()
 
         # Initialize variables and results
@@ -386,7 +543,13 @@ class CVQP:
 
 
 def test():
-    """Test the CVQP implementation against CVXPY."""
+    """
+    Test the CVQP implementation against CVXPY solver.
+
+    Creates a random test problem and compares the solution obtained by CVQP
+    against the solution from CVXPY using the MOSEK solver. Prints comparison
+    metrics including objective values and CVaR constraint satisfaction.
+    """
     m, d = 1_000, 1000
     np.random.seed(0)
 
