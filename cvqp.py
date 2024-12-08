@@ -1,5 +1,5 @@
 """
-CVQP: A solver for quadratic programs with conditional value-at-risk (CVaR) constraints.
+CVQP: A solver for CVaR-constrained quadratic programs.
 """
 
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ import numpy as np
 import scipy as sp
 
 from sum_largest_proj import proj_sum_largest
-from cvqp_utils import CVQPParams
+from cvqp_problems import CVQPParams
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s: %(message)s", datefmt="%b %d %H:%M:%S"

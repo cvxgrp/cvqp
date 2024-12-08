@@ -1,5 +1,5 @@
 """
-Common data structures for formulating CVQP problems. 
+Classes to define CVQP problems and generate examples.
 """
 
 from abc import ABC, abstractmethod

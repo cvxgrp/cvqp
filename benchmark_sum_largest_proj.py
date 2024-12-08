@@ -1,8 +1,5 @@
 """
-Script to benchmark our algorithm for projecting a vector onto the sum-k-largest
-constraint set (where the sum of the k largest elements must not exceed alpha).
-The performance is compared against the commercial solver MOSEK and the
-open-source solver Clarabel.
+Script to benchmark our sum-k-largest projection.
 """
 
 import numpy as np
