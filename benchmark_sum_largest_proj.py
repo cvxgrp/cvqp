@@ -240,6 +240,7 @@ class ProjectionBenchmark:
         tau_list: list[float],
         n_instances: int,
         solvers: list[str],
+        n_consecutive_failures: int | None = None,
     ) -> list[ProjectionResults]:
         """
         Run complete benchmark experiment across all configurations.
@@ -252,6 +253,7 @@ class ProjectionBenchmark:
             tau_list: List of hardness parameters to test
             n_instances: Number of random instances per configuration
             solvers: List of solvers to benchmark
+            n_consecutive_failures: If set, stop after this many consecutive failures
 
         Returns:
             List of ProjectionResults objects containing benchmark results
@@ -265,6 +267,7 @@ class ProjectionBenchmark:
                 for solver in solvers:
                     times = []
                     statuses = []
+                    consecutive_failures = 0
 
                     for i in range(n_instances):
                         seed = self.get_reproducible_seed(m, tau, i)
@@ -279,6 +282,21 @@ class ProjectionBenchmark:
 
                         times.append(solve_time)
                         statuses.append(status)
+
+                        if np.isnan(solve_time):
+                            consecutive_failures += 1
+                        else:
+                            consecutive_failures = 0
+
+                        if (
+                            n_consecutive_failures is not None
+                            and consecutive_failures >= n_consecutive_failures
+                        ):
+                            logging.info(
+                                f"    {solver:8s}: stopping after {consecutive_failures} "
+                                "consecutive failures"
+                            )
+                            break
 
                     result = ProjectionResults(
                         solver=solver, m=m, tau=tau, times=times, status=statuses
@@ -333,6 +351,7 @@ class ProjectionBenchmark:
         n_instances: int,
         solvers: list[str],
         output_file: str,
+        n_consecutive_failures: int | None = None,
     ):
         """
         Run a complete benchmark experiment and save results.
@@ -346,6 +365,7 @@ class ProjectionBenchmark:
             n_instances: Number of random instances per configuration
             solvers: List of solvers to benchmark
             output_file: Path to save the results
+            n_consecutive_failures: If set, stop after this many consecutive failures
         """
         logging.info("Starting sum-k-largest projection benchmark")
         logging.info(f"Testing m values: {m_list}")
@@ -353,7 +373,9 @@ class ProjectionBenchmark:
         logging.info(f"Testing solvers: {solvers}")
         logging.info(f"Running {n_instances} instances per configuration")
 
-        results = self.run_benchmark(m_list, tau_list, n_instances, solvers)
+        results = self.run_benchmark(
+            m_list, tau_list, n_instances, solvers, n_consecutive_failures
+        )
 
         logging.info("All experiments completed!")
         self.save_results(results, output_file)
@@ -373,4 +395,5 @@ if __name__ == "__main__":
         n_instances=n_instances,
         solvers=solvers,
         output_file="data/sum_largest_proj.pkl",
+        n_consecutive_failures=5, # Change to None to run all instances
     )
