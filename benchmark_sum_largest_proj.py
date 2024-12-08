@@ -23,7 +23,7 @@ logging.basicConfig(
 
 warnings.filterwarnings("ignore", module="cvxpy")
 
-TIME_LIMIT = 3600
+TIME_LIMIT = 1200
 SOLVER_CONFIGS = {
     "MOSEK": {"mosek_params": {"MSK_DPAR_OPTIMIZER_MAX_TIME": TIME_LIMIT}},
     "CLARABEL": {"time_limit": TIME_LIMIT},
@@ -395,5 +395,5 @@ if __name__ == "__main__":
         n_instances=n_instances,
         solvers=solvers,
         output_file="data/sum_largest_proj.pkl",
-        n_consecutive_failures=5, # Change to None to run all instances
+        n_consecutive_failures=5,  # Change to None to run all instances
     )
