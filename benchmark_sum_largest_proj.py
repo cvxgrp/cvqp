@@ -117,7 +117,7 @@ class ProjectionResults:
 class ProjectionBenchmark:
     """
     Benchmark manager for sum-k-largest projection problems.
-    
+
     Handles generation of test instances, running solvers, collecting results,
     and saving/loading benchmark data.
     """
@@ -337,7 +337,7 @@ class ProjectionBenchmark:
         """
         Run a complete benchmark experiment and save results.
 
-        Orchestrates the entire benchmarking process, including logging 
+        Orchestrates the entire benchmarking process, including logging
         configuration details, running benchmarks, and saving results.
 
         Args:
