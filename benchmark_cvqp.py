@@ -1,5 +1,5 @@
 """
-Script to benchmark CVQP solver.
+Script to benchmark our CVQP solver against MOSEK and Clarabel on a set of problems.
 """
 
 from dataclasses import dataclass
@@ -75,7 +75,7 @@ class BenchmarkResults:
         return len(self.times)
 
 
-class ExperimentRunner:
+class CVQPBenchmark:
     """
     Runner class for CVQP benchmark experiments.
 
@@ -359,7 +359,7 @@ def main():
     ]
 
     # Create experiment runner
-    runner = ExperimentRunner(
+    runner = CVQPBenchmark(
         problems=problems,
         n_instances=5,
         n_vars_list=[10, 100],
