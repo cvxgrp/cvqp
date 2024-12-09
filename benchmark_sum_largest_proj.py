@@ -1,9 +1,6 @@
 """
-Benchmark script for evaluating performance of sum-k-largest projection algorithm.
-
-This script compares different solvers' performance on the sum-k-largest projection
-problem, including our custom implementation against standard solvers like MOSEK and 
-CLARABEL.
+Script to benchmnark our custom sum-k-largest projection against MOSEK and
+CLARABEL on a set of problems. 
 """
 
 import numpy as np
@@ -23,11 +20,10 @@ logging.basicConfig(
 
 warnings.filterwarnings("ignore", module="cvxpy")
 
-TIME_LIMIT = 1200
+TIME_LIMIT = 1800
 SOLVER_CONFIGS = {
     "MOSEK": {"mosek_params": {"MSK_DPAR_OPTIMIZER_MAX_TIME": TIME_LIMIT}},
     "CLARABEL": {"time_limit": TIME_LIMIT},
-    "Ours": None,
 }
 
 
@@ -118,18 +114,37 @@ class ProjectionBenchmark:
     """
     Benchmark manager for sum-k-largest projection problems.
 
-    Handles generation of test instances, running solvers, collecting results,
-    and saving/loading benchmark data.
+    Args:
+        m_list: List of scenario counts to test
+        tau_list: List of hardness parameters to test
+        n_instances: Number of random instances per configuration
+        solvers: List of solvers to benchmark
+        n_consecutive_failures: Number of consecutive failures before stopping (None to run all)
+        base_seed: Base random seed for reproducibility
     """
+
+    def __init__(
+        self,
+        m_list: list[int],
+        tau_list: list[float],
+        n_instances: int = 50,
+        solvers: list[str] = ["Ours", "MOSEK", "CLARABEL"],
+        n_consecutive_failures: int | None = None,
+        base_seed: int = 42,
+    ):
+        self.m_list = m_list
+        self.tau_list = tau_list
+        self.n_instances = n_instances
+        self.solvers = solvers
+        self.n_consecutive_failures = n_consecutive_failures
+        self.base_seed = base_seed
+        self.results: dict[int, list[ProjectionResults]] = {m: [] for m in m_list}
 
     def solve_instance_cvxpy(
         self, instance: Projection, solver: str
     ) -> tuple[float, str]:
         """
         Solve a projection instance using a CVXPY-supported solver.
-
-        Formulates the problem using CVXPY's interface and solves it with
-        the specified solver, measuring the solution time.
 
         Args:
             instance: Problem instance to solve
@@ -186,9 +201,6 @@ class ProjectionBenchmark:
         """
         Generate a random sum-k-largest projection problem instance.
 
-        Creates a problem instance with uniformly distributed vector entries
-        and a CVaR-style constraint on the sum of largest elements.
-
         Args:
             m: Number of scenarios (vector length)
             tau: Hardness parameter in (0,1)
@@ -223,53 +235,52 @@ class ProjectionBenchmark:
 
     @staticmethod
     def format_time_s(t: float) -> str:
-        """
-        Format a time value in seconds using scientific notation.
-
-        Args:
-            t: Time value in seconds
-
-        Returns:
-            Formatted string with time in scientific notation
-        """
+        """Format time in scientific notation."""
         return f"{t:.2e}s"
 
-    def run_benchmark(
-        self,
-        m_list: list[int],
-        tau_list: list[float],
-        n_instances: int,
-        solvers: list[str],
-        n_consecutive_failures: int | None = None,
-    ) -> list[ProjectionResults]:
+    def save_m_results(self, m: int):
         """
-        Run complete benchmark experiment across all configurations.
-
-        Tests each solver on multiple random instances for each combination
-        of problem size (m) and hardness parameter (tau).
+        Save results for a specific m value to its own pickle file.
 
         Args:
-            m_list: List of scenario counts to test
-            tau_list: List of hardness parameters to test
-            n_instances: Number of random instances per configuration
-            solvers: List of solvers to benchmark
-            n_consecutive_failures: If set, stop after this many consecutive failures
-
-        Returns:
-            List of ProjectionResults objects containing benchmark results
+            m: Number of scenarios for this set of results
         """
-        results = []
+        results_dict = {
+            "m": m,
+            "tau_list": self.tau_list,
+            "n_instances": self.n_instances,
+            "results": self.results[m],
+        }
+        filename = f"data/proj_m={m}.pkl"
+        with open(filename, "wb") as f:
+            pickle.dump(results_dict, f)
 
-        for m in m_list:
-            logging.info(f"\nBenchmarking problems with m={m: .0e}")
-            for tau in tau_list:
-                logging.info(f"\n  τ={tau}:")
-                for solver in solvers:
+    def run_experiments(self):
+        """Run all experiments and store results."""
+        Path("data").mkdir(exist_ok=True)
+
+        logging.info("Starting sum-k-largest projection benchmark")
+        logging.info(f"Testing m values: {self.m_list}")
+        logging.info(f"Testing τ values: {self.tau_list}")
+        logging.info(f"Testing solvers: {[s.upper() for s in self.solvers]}")
+        logging.info(f"Running {self.n_instances} instances per configuration")
+        if self.n_consecutive_failures:
+            logging.info(
+                f"Will stop after {self.n_consecutive_failures} consecutive failures"
+            )
+
+        for m in self.m_list:
+            logging.info(f"Benchmarking problems with m={m:.0e}")
+
+            for tau in self.tau_list:
+                logging.info(f"  τ={tau}:")
+
+                for solver in self.solvers:
                     times = []
                     statuses = []
                     consecutive_failures = 0
 
-                    for i in range(n_instances):
+                    for i in range(self.n_instances):
                         seed = self.get_reproducible_seed(m, tau, i)
                         instance = self.generate_instance(m, tau, seed)
 
@@ -289,8 +300,8 @@ class ProjectionBenchmark:
                             consecutive_failures = 0
 
                         if (
-                            n_consecutive_failures is not None
-                            and consecutive_failures >= n_consecutive_failures
+                            self.n_consecutive_failures is not None
+                            and consecutive_failures >= self.n_consecutive_failures
                         ):
                             logging.info(
                                 f"    {solver:8s}: stopping after {consecutive_failures} "
@@ -313,87 +324,30 @@ class ProjectionBenchmark:
                             f"    {solver:8s}: all {result.num_total} attempts failed"
                         )
 
-                    results.append(result)
-
-        return results
-
-    @staticmethod
-    def save_results(results: list[ProjectionResults], filename: str):
-        """
-        Save benchmark results to a pickle file.
-
-        Args:
-            results: List of benchmark results to save
-            filename: Path where results should be saved
-        """
-        Path("data").mkdir(exist_ok=True)
-        with open(filename, "wb") as f:
-            pickle.dump(results, f)
-
-    @staticmethod
-    def load_results(filename: str) -> list[ProjectionResults]:
-        """
-        Load benchmark results from a pickle file.
-
-        Args:
-            filename: Path to the pickle file containing results
-
-        Returns:
-            List of loaded ProjectionResults objects
-        """
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-
-    def run_experiment(
-        self,
-        m_list: list[int],
-        tau_list: list[float],
-        n_instances: int,
-        solvers: list[str],
-        output_file: str,
-        n_consecutive_failures: int | None = None,
-    ):
-        """
-        Run a complete benchmark experiment and save results.
-
-        Orchestrates the entire benchmarking process, including logging
-        configuration details, running benchmarks, and saving results.
-
-        Args:
-            m_list: List of scenario counts to test
-            tau_list: List of hardness parameters to test
-            n_instances: Number of random instances per configuration
-            solvers: List of solvers to benchmark
-            output_file: Path to save the results
-            n_consecutive_failures: If set, stop after this many consecutive failures
-        """
-        logging.info("Starting sum-k-largest projection benchmark")
-        logging.info(f"Testing m values: {m_list}")
-        logging.info(f"Testing τ values: {tau_list}")
-        logging.info(f"Testing solvers: {solvers}")
-        logging.info(f"Running {n_instances} instances per configuration")
-
-        results = self.run_benchmark(
-            m_list, tau_list, n_instances, solvers, n_consecutive_failures
-        )
+                    self.results[m].append(result)
+                    # Save results after each solver completes
+                    self.save_m_results(m)
 
         logging.info("All experiments completed!")
-        self.save_results(results, output_file)
+
+
+def main():
+    """Run projection benchmark experiments."""
+    tau_list = [0.1, 0.9]
+    m_list = [int(x) for x in [1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]]
+
+    # Create benchmark runner
+    runner = ProjectionBenchmark(
+        m_list=m_list,
+        tau_list=tau_list,
+        n_instances=50,
+        solvers=["Ours", "MOSEK", "CLARABEL"],
+        n_consecutive_failures=5,  # Stop after 5 consecutive failures
+    )
+
+    # Run experiments
+    runner.run_experiments()
 
 
 if __name__ == "__main__":
-    benchmark = ProjectionBenchmark()
-
-    tau_list = [0.1, 0.9]
-    m_list = [int(x) for x in [1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]]
-    n_instances = 50
-    solvers = ["Ours", "MOSEK", "CLARABEL"]
-
-    benchmark.run_experiment(
-        m_list=m_list,
-        tau_list=tau_list,
-        n_instances=n_instances,
-        solvers=solvers,
-        output_file="data/sum_largest_proj.pkl",
-        n_consecutive_failures=5,  # Change to None to run all instances
-    )
+    main()
