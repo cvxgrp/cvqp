@@ -38,19 +38,23 @@ class CVQPConfig:
         rho_incr: Multiplicative factor for increasing rho
         rho_decr: Multiplicative factor for decreasing rho
         verbose: If True, prints detailed convergence information
+        time_limit: Maximum time in seconds before termination (default: 3600s = 1h)
+        dynamic_rho: If True, adaptively updates the penalty parameter rho during optimization
     """
 
-    max_iter: int = 10_000
+    max_iter: int = int(1e5)
     alpha: float = 0.5
     rho: float = 0.1
-    abstol: float = 1e-4
-    reltol: float = 1e-2
+    abstol: float = 1e-3
+    reltol: float = 1e-3
     alpha_over: float = 1.7
     print_freq: int = 100
     mu: float = 10
-    rho_incr: float = 1.5
-    rho_decr: float = 1.5
+    rho_incr: float = 2.0
+    rho_decr: float = 2.0
     verbose: bool = False
+    time_limit: float = 3600
+    dynamic_rho: bool = True
 
 
 @dataclass
@@ -521,6 +525,11 @@ class CVQP:
                     self.print_iteration(
                         i, r_norm, eps_pri, s_norm, eps_dual, rho, objval
                     )
+                    
+                # Check time limit
+                if time.time() - start_time > self.options.time_limit:
+                    results.problem_status = "timeout"
+                    break
 
                 # Check convergence
                 if self.check_convergence(r_norm, s_norm, eps_pri, eps_dual):
@@ -528,7 +537,8 @@ class CVQP:
                     break
 
                 # Update penalty parameter
-                rho, u, u_tilde = self.update_rho(rho, r_norm, s_norm, u, u_tilde)
+                if self.options.dynamic_rho:
+                    rho, u, u_tilde = self.update_rho(rho, r_norm, s_norm, u, u_tilde)
 
         # Finalize results
         self.unscale_problem()
@@ -550,7 +560,7 @@ def test():
     against the solution from CVXPY using the MOSEK solver. Prints comparison
     metrics including objective values and CVaR constraint satisfaction.
     """
-    m, d = 1_000, 1000
+    m, d = int(1e4), int(1e2)
     np.random.seed(0)
 
     # Generate test problem
@@ -579,7 +589,7 @@ def test():
     prob.solve(solver=cp.MOSEK, verbose=True)
 
     # Solve with CVQP solver
-    solver = CVQP(params, CVQPConfig(max_iter=6000, verbose=True))
+    solver = CVQP(params, CVQPConfig(verbose=True))
     results = solver.solve()
 
     # Compare results
