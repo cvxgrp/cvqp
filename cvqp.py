@@ -525,7 +525,7 @@ class CVQP:
                     self.print_iteration(
                         i, r_norm, eps_pri, s_norm, eps_dual, rho, objval
                     )
-                    
+
                 # Check time limit
                 if time.time() - start_time > self.options.time_limit:
                     results.problem_status = "timeout"
