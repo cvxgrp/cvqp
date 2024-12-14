@@ -85,7 +85,7 @@ class PortfolioOptimization(CVQProblem):
         nu: float = 0.1,
         sigma: float = 0.2,
         beta: float = 0.95,
-        kappa: float = 0.5,
+        kappa: float = 0.15,
     ):
         self.alpha = alpha
         self.gamma = gamma
