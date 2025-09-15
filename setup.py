@@ -1,14 +1,15 @@
-from setuptools import setup, Extension
-import pybind11
+from pybind11.setup_helpers import Pybind11Extension, build_ext
+from setuptools import setup
+
 
 ext_modules = [
-    Extension(
-        "cvqp.libs.proj_sum_largest_cpp",
-        ["cvqp/libs/bindings.cpp", "cvqp/libs/sum_largest_proj.cpp"],
-        include_dirs=[pybind11.get_include()],
-        extra_compile_args=["-std=c++11", "-O3"],
-        language="c++",
+    Pybind11Extension(
+        "cvqp.libs.proj_sum_largest",
+        ["cvqp/libs/bindings.cpp", "cvqp/libs/proj_sum_largest.cpp"],
+        cxx_std=17,
+        extra_compile_args=["-O3"],
     ),
 ]
 
-setup(ext_modules=ext_modules)
+
+setup(ext_modules=ext_modules, cmdclass={"build_ext": build_ext}, zip_safe=False)

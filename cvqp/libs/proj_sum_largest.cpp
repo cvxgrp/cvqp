@@ -1,16 +1,16 @@
-#include <iostream>
-#include <vector>
+#include <algorithm>
 #include <cmath>
-#include <tuple>
+#include <iostream>
 #include <limits>
-#include "sum_largest_proj.h"
+#include <tuple>
+#include <utility>
+#include <vector>
+#include "proj_sum_largest.h"
 
 void form_delta(int untied, int tied, int k, int len_z, std::pair<double,double>& p) {
     int u = untied;
     int t = tied;
     int n = k - u;
-
-    int len = (u + t < len_z) ? (u + t + 1): len_z;
 
     double untied_val = (n > 0) ? (static_cast<double>(t) / n) : 1.0;
 
@@ -177,4 +177,3 @@ std::tuple<int,int, bool> sum_largest_proj(double* z, int n, int k, double alpha
     std::tuple<int,int, bool> r = std::make_tuple(final_untied_count, final_tied_count, complete);
     return r;
 }
-

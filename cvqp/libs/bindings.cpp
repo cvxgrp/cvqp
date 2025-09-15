@@ -4,11 +4,11 @@
 #include <iostream>
 #include <vector>
 #include <tuple>
-#include "sum_largest_proj.h" // Include the declarations
+#include "proj_sum_largest.h" // Include the declarations
 
 namespace py = pybind11;
 
-py::tuple proj_sum_largest_cpp(py::array_t<double> z, int k, double alpha, int untied, int tied, int cutoff, bool debug) {
+py::tuple proj_sum_largest(py::array_t<double> z, int k, double alpha, int untied, int tied, int cutoff, bool debug) {
     // Extract the NumPy array data into a C++ vector
     py::buffer_info buf_info = z.request();
     
@@ -21,7 +21,7 @@ py::tuple proj_sum_largest_cpp(py::array_t<double> z, int k, double alpha, int u
 
 }
 
-PYBIND11_MODULE(proj_sum_largest_cpp, m) {
-    m.doc() = "Python bindings for sum_largest_proj";
-    m.def("proj_sum_largest_cpp", &proj_sum_largest_cpp, "Compute sum_largest_proj function");
+PYBIND11_MODULE(proj_sum_largest, m) {
+    m.doc() = "Python bindings for proj_sum_largest";
+    m.def("proj_sum_largest", &proj_sum_largest, "Project onto sum-of-k-largest constraint");
 }

@@ -1,3 +1,3 @@
-from .proj_sum_largest_cpp import proj_sum_largest_cpp
+from .proj_sum_largest import proj_sum_largest
 
-__all__ = ["proj_sum_largest_cpp"]
+__all__ = ["proj_sum_largest"]

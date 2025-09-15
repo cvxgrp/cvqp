@@ -3,7 +3,7 @@ Projection onto sum-of-k-largest and CVaR constraints.
 """
 
 import numpy as np
-from .libs import proj_sum_largest_cpp
+from .libs import proj_sum_largest as proj_sum_largest_cpp
 
 
 def proj_sum_largest(x: np.ndarray, k: int, alpha: float) -> np.ndarray:
