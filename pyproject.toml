@@ -59,7 +59,17 @@ cvqp = ["libs/*.cpp", "libs/*.h", "py.typed"]
 
 [tool.cibuildwheel]
 build-verbosity = 1
-test-requires = "pytest"
-test-command = "pytest {project}/tests -v"
 skip = "pp* *-musllinux*"
-before-build = "pip install pybind11"
+archs = ["auto"]
+before-build = "pip install pybind11 numpy"
+test-requires = "pytest numpy"
+test-command = "python -c 'import cvqp; from cvqp.libs import proj_sum_largest_cpp; print(\"C++ extension imported successfully\")'"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
