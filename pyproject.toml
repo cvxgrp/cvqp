@@ -61,14 +61,5 @@ cvqp = ["libs/*.cpp", "libs/*.h", "py.typed"]
 build-verbosity = 1
 test-requires = "pytest"
 test-command = "pytest {project}/tests -v"
-# Skip PyPy and musllinux for now
 skip = "pp* *-musllinux*"
-
-[tool.cibuildwheel.linux]
-before-all = "yum install -y gcc-c++ || apt-get update && apt-get install -y g++"
-
-[tool.cibuildwheel.macos]
-archs = ["x86_64", "arm64"]
-
-[tool.cibuildwheel.windows]
-archs = ["AMD64"]
+before-build = "pip install pybind11"
