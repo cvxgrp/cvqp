@@ -37,15 +37,13 @@ def proj_cvar(x: np.ndarray, beta: float, kappa: float) -> np.ndarray:
         raise TypeError(f"Input x must be a numpy array, got {type(x)}")
     if x.ndim != 1:
         raise ValueError(f"Input x must be a 1D array, got shape {x.shape}")
-    if not 0 < beta < 1:
-        raise ValueError(f"beta must be between 0 and 1 (exclusive), got {beta}")
+    if not 0 <= beta < 1:
+        raise ValueError(f"beta must be in [0, 1), got {beta}")
     if kappa < 0:
         raise ValueError(f"kappa must be non-negative, got {kappa}")
 
     n_scenarios = x.shape[0]
     k = int((1 - beta) * n_scenarios)  # Number of tail scenarios
-    if k == 0:
-        return x.copy()  # Constraint is vacuous
 
     # Convert CVaR constraint to sum-of-k-largest
     alpha = kappa * k
