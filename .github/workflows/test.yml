@@ -36,11 +36,11 @@ jobs:
 
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root --only main,test
+      run: poetry install --no-interaction --no-root --extras test
 
     - name: Install package
       run: |
-        poetry install --no-interaction --only main,test
+        poetry install --no-interaction --extras test
         poetry run pip install -e .
 
     - name: Run tests
