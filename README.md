@@ -71,7 +71,6 @@ losses = A @ results.x
 k = int((1 - beta) * n_scenarios)
 cvar = np.mean(np.sort(losses)[-k:])
 
-print(f"Optimal value: {results.value:.6f}")
 print(f"CVaR at β={beta}: {cvar:.6f} (limit: {kappa})")
 ```
 
@@ -113,10 +112,14 @@ k = int((1 - beta) * len(v))
 d = kappa * k
 x_sum = proj_sum_largest(v, k, d)
 
+# Verify constraints are satisfied
+cvar_original = np.mean(np.sort(v)[-k:])
+cvar_projected = np.mean(np.sort(x_cvar)[-k:])
+
 print(f"Original:         {v}")
-print(f"Projected (CVaR): {x_cvar}")
-print(f"Projected (sum):  {x_sum}")
-print(f"Equivalent:       {np.allclose(x_cvar, x_sum)}")
+print(f"Projected:        {x_cvar}")
+print(f"CVaR: {cvar_original:.2f} → {cvar_projected:.2f} (limit: {kappa})")
+print(f"Equivalent to sum-k-largest: {np.allclose(x_cvar, x_sum)}")
 ```
 
 ## Benchmarks
