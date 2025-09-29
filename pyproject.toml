@@ -34,7 +34,7 @@ test = ["pytest>=8.3.5", "cvxpy>=1.6.0"]
 dev = [
     "ipykernel>=6.29.5",
     "jupyter>=1.1.1",
-    "mosek>=10.2.8",
+    "mosek>=10.2.8; python_version<'3.13'",
     "pyinstrument>=5.0.0",
     "pandas>=2.2.3",
     "black>=24.10.0",
