@@ -14,8 +14,6 @@ def proj_sum_largest(x: np.ndarray, k: int, alpha: float) -> np.ndarray:
         raise ValueError(f"Input x must be a 1D array, got shape {x.shape}")
     if not 0 < k <= len(x):
         raise ValueError(f"k must be between 0 and len(x), got {k}")
-    if alpha < 0:
-        raise ValueError(f"alpha must be non-negative, got {alpha}")
 
     sorted_inds = np.argsort(x)[::-1]
     x_sorted = x[sorted_inds]
@@ -39,8 +37,6 @@ def proj_cvar(x: np.ndarray, beta: float, kappa: float) -> np.ndarray:
         raise ValueError(f"Input x must be a 1D array, got shape {x.shape}")
     if not 0 <= beta < 1:
         raise ValueError(f"beta must be in [0, 1), got {beta}")
-    if kappa < 0:
-        raise ValueError(f"kappa must be non-negative, got {kappa}")
 
     n_scenarios = x.shape[0]
     k = int((1 - beta) * n_scenarios)  # Number of tail scenarios

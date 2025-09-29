@@ -9,35 +9,36 @@ import cvxpy as cp
 
 from cvqp import CVQP, CVQPParams, proj_sum_largest, proj_cvar
 
-# Test tolerances
 OBJECTIVE_TOL = 1e-2
 FEASIBILITY_TOL = 1e-3
 
 
 def create_test_problem(matrix_type="dense", size=(50, 8)):
-    """Create a standard test problem."""
+    """Create test problem."""
     np.random.seed(42)
     m, d = size
 
-    if matrix_type == "dense":
-        P = np.eye(d)
-        B = np.eye(d)
-    elif matrix_type == "sparse":
-        P = sp.sparse.eye(d)
-        B = sp.sparse.eye(d)
-    else:  # linear
+    if matrix_type == "linear":
         P = None
-        B = np.eye(d)
+    else:
+        P = np.diag(np.ones(d) + np.random.rand(d) * 0.1)
+        if matrix_type == "sparse":
+            P = sp.sparse.csr_matrix(P)
+
+    # Box constraints
+    B = np.eye(d)
+    if matrix_type == "sparse":
+        B = sp.sparse.csr_matrix(B)
 
     return CVQPParams(
         P=P,
-        q=np.random.randn(d) * 0.1,
-        A=np.random.randn(m, d) * 0.2 + 0.1,
+        q=np.random.randn(d) * 0.05,
+        A=np.random.randn(m, d) * 0.1,
         B=B,
-        l=-np.ones(d) * 0.8,
-        u=np.ones(d) * 0.8,
-        beta=0.9,
-        kappa=0.2,
+        l=-np.ones(d) * 2,
+        u=np.ones(d) * 2,
+        beta=0.95,
+        kappa=0.5,
     )
 
 
@@ -52,7 +53,7 @@ def assert_feasible(results, params):
     # CVaR constraint
     sorted_vals = np.sort(params.A @ x)
     k = int(len(sorted_vals) * (1 - params.beta))
-    cvar = np.mean(sorted_vals[-k:]) if k > 0 else 0
+    cvar = np.mean(sorted_vals[-k:])
     assert cvar <= params.kappa + FEASIBILITY_TOL, f"CVaR {cvar:.3f} > {params.kappa}"
 
 
@@ -61,16 +62,14 @@ def solve_with_cvxpy(params):
     d = params.q.shape[0]
     x = cp.Variable(d)
 
-    # Build objective: linear or quadratic
+    # Objective
     if params.P is None:
         objective = cp.Minimize(params.q @ x)
     else:
-        P_dense = params.P.toarray() if sp.sparse.issparse(params.P) else params.P
-        objective = cp.Minimize(0.5 * cp.quad_form(x, P_dense) + params.q @ x)
+        objective = cp.Minimize(0.5 * cp.quad_form(x, params.P) + params.q @ x)
 
-    # Build constraints: CVaR + box constraints
-    B_dense = params.B.toarray() if sp.sparse.issparse(params.B) else params.B
-    constraints = [cp.cvar(params.A @ x, params.beta) <= params.kappa, params.l <= B_dense @ x, B_dense @ x <= params.u]
+    # Constraints
+    constraints = [cp.cvar(params.A @ x, params.beta) <= params.kappa, params.l <= params.B @ x, params.B @ x <= params.u]
 
     prob = cp.Problem(objective, constraints)
     prob.solve(solver=cp.CLARABEL, verbose=False)
@@ -78,12 +77,12 @@ def solve_with_cvxpy(params):
     if prob.status != cp.OPTIMAL:
         return None, None
 
-    # Compute objective value to match CVQP's calculation
+    # Compute objective value
     if params.P is None:
         obj_val = params.q @ x.value
     else:
         P_dense = params.P.toarray() if sp.sparse.issparse(params.P) else params.P
-        obj_val = 0.5 * np.dot(x.value, P_dense @ x.value) + params.q @ x.value
+        obj_val = 0.5 * x.value @ P_dense @ x.value + params.q @ x.value
 
     return x.value, obj_val
 
@@ -98,17 +97,17 @@ class TestProjections:
 
         result = proj_sum_largest(x, k, alpha)
 
-        # Verify constraint satisfaction
+        # Verify constraint is satisfied or active
         sum_k_largest = sum(sorted(result, reverse=True)[:k])
-        assert sum_k_largest <= alpha + FEASIBILITY_TOL
+        assert sum_k_largest <= alpha or np.isclose(sum_k_largest, alpha)
 
-        # Cross-check against CVXPY reference solution
+        # Cross-check against CVXPY
         y = cp.Variable(x.shape)
         prob = cp.Problem(cp.Minimize(cp.sum_squares(y - x)), [cp.sum_largest(y, k) <= alpha])
         prob.solve(solver=cp.CLARABEL, verbose=False)
 
         if prob.status == cp.OPTIMAL:
-            assert np.linalg.norm(result - y.value) <= 1e-3
+            np.testing.assert_allclose(result, y.value, rtol=1e-5)
 
     def test_proj_sum_largest_no_projection_needed(self):
         """Test when constraint is already satisfied."""
@@ -122,30 +121,29 @@ class TestProjections:
         """Test edge cases for sum-of-k-largest projection."""
         x = np.array([5.0, 4.0, 3.0, 2.0, 1.0])
 
-        # k=1 case
+        # k=1 (maximum element)
         result = proj_sum_largest(x, 1, 3.0)
-        assert max(result) <= 3.0 + FEASIBILITY_TOL
+        assert max(result) <= 3.0 or np.isclose(max(result), 3.0)
 
-        # alpha=0 case
+        # alpha=0 (force to zero)
         result = proj_sum_largest(x, 2, 0.0)
-        sum_k_largest = sum(sorted(result, reverse=True)[:2])
-        assert sum_k_largest <= FEASIBILITY_TOL
+        np.testing.assert_allclose(sorted(result)[-2:], [0.0, 0.0])
 
-        # k=len(x) case
+        # k=len(x) (sum constraint)
         result = proj_sum_largest(x, len(x), 10.0)
-        assert np.sum(result) <= 10.0 + FEASIBILITY_TOL
+        assert np.sum(result) <= 10.0 or np.isclose(np.sum(result), 10.0)
 
     def test_proj_cvar_basic(self):
         """Test basic CVaR projection."""
         x = np.array([6.0, 2.0, 5.0, 4.0, 1.0])
-        beta, kappa = 0.6, 4.0  # k = int((1-0.6)*5) = 2
+        beta, kappa = 0.6, 4.0
 
         result = proj_cvar(x, beta, kappa)
 
-        sorted_x = np.sort(result)
+        # Verify CVaR constraint
         k = int((1 - beta) * len(x))
-        cvar = np.mean(sorted_x[-k:]) if k > 0 else 0
-        assert cvar <= kappa + FEASIBILITY_TOL
+        cvar = np.mean(np.sort(result)[-k:])
+        assert cvar <= kappa or np.isclose(cvar, kappa)
 
     def test_proj_cvar_equivalence(self):
         """Test that proj_cvar gives same result as proj_sum_largest."""
@@ -169,21 +167,15 @@ class TestProjections:
         with pytest.raises(ValueError, match="k must be between"):
             proj_sum_largest(x, 0, 1.0)
 
-        with pytest.raises(ValueError, match="alpha must be non-negative"):
-            proj_sum_largest(x, 1, -1.0)
-
         with pytest.raises(ValueError, match="1D array"):
             proj_sum_largest(np.array([[1, 2], [3, 4]]), 1, 1.0)
 
         # proj_cvar validation
-        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
-            proj_cvar(x, 0.0, 1.0)
+        with pytest.raises(ValueError, match="beta must be in"):
+            proj_cvar(x, -0.1, 1.0)
 
-        with pytest.raises(ValueError, match="beta must be between 0 and 1"):
+        with pytest.raises(ValueError, match="beta must be in"):
             proj_cvar(x, 1.0, 1.0)
-
-        with pytest.raises(ValueError, match="kappa must be non-negative"):
-            proj_cvar(x, 0.5, -1.0)
 
 
 class TestCVQPSolver:
