@@ -76,7 +76,7 @@ print(f"CVaR at β={beta}: {cvar:.6f} (limit: {kappa})")
 
 ### Project onto CVaR / sum-of-k-largest constraints
 
-Projection onto a CVaR constraint finds the closest point to a given vector $v$ that satisfies the CVaR limit. This problem has the form
+Projection onto a CVaR constraint finds the closest vector to a given vector $v$ that satisfies the CVaR limit. This problem has the form
 
 $$
 \begin{array}{ll}
