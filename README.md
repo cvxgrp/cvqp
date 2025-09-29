@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/cvqp.svg)](https://pypi.org/project/cvqp/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-CVQP is a Python library with fast, scalable methods for solving large-scale CVaR-constrained quadratic programs and Euclidean projection onto CVaR constraints (or equivalent sum-of-k-largest constraints). These methods handle problems where standard solvers are prohibitively slow or fail. For details, see our [paper](https://web.stanford.edu/~boyd/papers/cvar_qp.html).
+CVQP solves large-scale CVaR-constrained quadratic programs with millions of scenarios, where standard solvers fail or are prohibitively slow. It also provides an efficient algorithm for Euclidean projection onto CVaR constraints (equivalently, sum-of-k-largest constraints). For details, see our [paper](https://web.stanford.edu/~boyd/papers/cvar_qp.html).
 
 ## Installation
 
@@ -36,34 +36,48 @@ $$
 \end{array}
 $$
 
-where $\phi_\beta$ is the Conditional Value-at-Risk (CVaR) at level $\beta$.
+where $\phi_\beta$ is the Conditional Value-at-Risk (CVaR) at confidence level $\beta \in [0,1)$ of the losses $Ax \in \mathbf{R}^m$. CVaR is the expected value of the worst $(1-\beta)$ fraction of losses. For example, with $\beta = 0.9$ and $m = 1000$ scenarios, CVaR is the average of the 100 largest losses.
+
+Below we show how to formulate and solve a CVQP arising from a portfolio construction problem:
 
 ```python
 import numpy as np
 from cvqp import solve_cvqp
 
-# Problem data
-np.random.seed(42)
-n, m = 10, 100
-P = np.eye(n) * 0.1                    # Quadratic cost matrix
-q = np.ones(n) * -0.1                  # Linear cost vector
-A = np.random.randn(m, n) * 0.2 + 0.1  # CVaR constraint matrix
-B = np.eye(n)                          # Box constraint matrix
-l = -np.ones(n)                        # Lower bounds
-u = np.ones(n)                         # Upper bounds
-beta = 0.9                             # CVaR confidence level
-kappa = 0.1                            # CVaR limit
+# Generate data
+np.random.seed(1)
+n_assets = 100
+n_scenarios = 10000
+R = np.random.randn(n_scenarios, n_assets) * 0.1 + 0.01
+mu = np.mean(R, axis=0)
+Sigma = np.cov(R.T)
 
+# Build problem matrices
+P = Sigma
+q = -mu
+A = -R
+B = np.vstack([np.ones((1, n_assets)), np.eye(n_assets)])
+l = np.concatenate([[1.0], np.zeros(n_assets)])
+u = np.concatenate([[1.0], np.ones(n_assets)])
+
+# Solve portfolio optimization with CVaR constraint
+beta = 0.95
+kappa = 0.025
 results = solve_cvqp(P=P, q=q, A=A, B=B, l=l, u=u,
                      beta=beta, kappa=kappa, verbose=True)
 
+# Check CVaR at solution
+losses = A @ results.x
+k = int((1 - beta) * n_scenarios)
+cvar = np.mean(np.sort(losses)[-k:])
+
 print(f"Optimal value: {results.value:.6f}")
-print(f"Solution: {results.x}")
+print(f"CVaR at β={beta}: {cvar:.6f} (limit: {kappa})")
 ```
 
-### Project onto a CVaR constraint
+### Project onto CVaR / sum-of-k-largest constraints
 
-Project a vector $v$ onto the feasible set defined by a CVaR constraint:
+Projection onto a CVaR constraint finds the closest point to a given vector $v$ that satisfies the CVaR limit. This problem has the form
 
 $$
 \begin{array}{ll}
@@ -72,54 +86,37 @@ $$
 \end{array}
 $$
 
-```python
-from cvqp import proj_cvar
-import numpy as np
-
-# Create a vector representing scenario losses
-v = np.array([4.0, 1.0, 6.0, 2.0, 5.0, 3.0, 7.0])
-beta = 0.8  # Confidence level (80%)
-kappa = 4.5  # CVaR threshold
-
-x = proj_cvar(v, beta, kappa)
-
-# Compute CVaR at confidence level beta
-def cvar(losses, beta):
-    sorted_losses = sorted(losses, reverse=True)
-    k = int((1 - beta) * len(losses))
-    return sum(sorted_losses[:k]) / k
-
-print(f"Original losses: {v}")
-print(f"Projected losses: {x}")
-print(f"Original CVaR: {cvar(v, beta):.2f}")
-print(f"Projected CVaR: {cvar(x, beta):.2f}")
-```
-
-### Project onto a sum-of-k-largest constraint
-
-CVaR constraints are equivalent to sum-of-k-largest constraints. For a vector $x \in \mathbf{R}^m$, the CVaR constraint $\phi_\beta(x) \leq \kappa$ is equivalent to $f_k(x) \leq d$ where $f_k(x) = \sum_{i=1}^k x_{[i]}$ (sum of k largest components), $k = (1-\beta)m$, and $d = \kappa k$. The projection problem becomes
+This is equivalent to projection onto a sum-of-k-largest constraint:
 
 $$
 \begin{array}{ll}
 \text{minimize} & \|v - x\|_2^2 \\
-\text{subject to} & f_k(x) \leq d.
+\text{subject to} & f_k(x) \leq d,
 \end{array}
 $$
 
+where $f_k(x) = \sum_{i=1}^k x_{[i]}$ (sum of k largest components), $k = \lceil(1-\beta)m\rceil$, and $d = \kappa k$.
+
 ```python
-from cvqp import proj_sum_largest
+from cvqp import proj_cvar, proj_sum_largest
 import numpy as np
 
-# Create a vector to project
-v = np.array([6.0, 2.0, 5.0, 4.0, 1.0])
-k = 2  # Number of largest elements to constrain
-d = 7.0  # Upper bound on sum
+# Project a vector onto CVaR constraint
+v = np.array([3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0])
+beta = 0.75
+kappa = 5.0
 
-x = proj_sum_largest(v, k, d)
+# Both formulations give the same result
+x_cvar = proj_cvar(v, beta, kappa)
 
-print(f"Original vector: {v}")
-print(f"Projected vector: {x}")
-print(f"Sum of {k} largest: {sum(sorted(x, reverse=True)[:k]):.2f}")
+k = int((1 - beta) * len(v))
+d = kappa * k
+x_sum = proj_sum_largest(v, k, d)
+
+print(f"Original:         {v}")
+print(f"Projected (CVaR): {x_cvar}")
+print(f"Projected (sum):  {x_sum}")
+print(f"Equivalent:       {np.allclose(x_cvar, x_sum)}")
 ```
 
 ## Benchmarks
