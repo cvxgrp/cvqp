@@ -63,7 +63,7 @@ skip = "cp38-* cp39-* pp* *-musllinux*"
 archs = ["auto"]
 before-build = "pip install pybind11 numpy"
 test-requires = "pytest numpy scipy"
-test-command = "pytest {project}/tests/test_projection.py -v"
+test-command = "pytest {project}/tests/test_cpp.py -v"
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]

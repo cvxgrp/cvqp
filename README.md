@@ -47,7 +47,7 @@ import cvqp
 # Portfolio: n assets, m historical return scenarios
 n, m = 10, 5000
 np.random.seed(0)
-R = np.random.randn(m, n) * 0.05 + 0.01   # return scenarios
+R = np.random.randn(m, n) * 0.05 + 0.01     # return scenarios
 mu = R.mean(axis=0)                         # expected returns
 Sigma = np.cov(R.T)                         # covariance
 
@@ -81,7 +81,7 @@ v = np.random.randn(100_000)
 z = cvqp.proj_cvar(v, beta=0.95, kappa=1.0)
 ```
 
-### Sum-of-$k$-largest projection
+### Sum-of-k-largest projection
 
 Since $\phi_\beta(z) \leq \kappa$ is equivalent to $f_k(z) \leq d$ with $k = \lceil(1-\beta)m\rceil$ and $d = \kappa k$, the projection can also be expressed as
 
@@ -99,8 +99,8 @@ import numpy as np
 import cvqp
 
 v = np.random.randn(100_000)
-k = int(0.05 * len(v))       # same as ceil((1 - 0.95) * m)
-d = 1.0 * k                  # same as kappa * k
+k = int(0.05 * len(v))  # same as ceil((1 - 0.95) * m)
+d = 1.0 * k             # same as kappa * k
 z = cvqp.proj_sum_largest(v, k, d)
 ```
 
