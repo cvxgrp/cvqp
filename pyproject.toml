@@ -1,6 +1,6 @@
 [project]
 name = "cvqp"
-version = "0.2.2"
+version = "0.3.0"
 description = "A Python implementation of the CVQP solver for CVaR-constrained quadratic programs"
 authors = [
     {name = "David Pérez Piñeiro"},
@@ -55,7 +55,7 @@ build-backend = "setuptools.build_meta"
 include = ["cvqp*"]
 
 [tool.setuptools.package-data]
-cvqp = ["libs/*.cpp", "libs/*.h", "py.typed"]
+cvqp = ["_cpp/*.cpp", "_cpp/*.h"]
 
 [tool.cibuildwheel]
 build-verbosity = 1
@@ -63,7 +63,7 @@ skip = "cp38-* cp39-* pp* *-musllinux*"
 archs = ["auto"]
 before-build = "pip install pybind11 numpy"
 test-requires = "pytest numpy scipy"
-test-command = "pytest {project}/tests/test_cpp_extension.py -v"
+test-command = "pytest {project}/tests/test_projection.py -v"
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]

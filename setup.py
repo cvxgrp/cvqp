@@ -4,8 +4,8 @@ from setuptools import setup
 
 ext_modules = [
     Pybind11Extension(
-        "cvqp.libs.proj_sum_largest",
-        ["cvqp/libs/bindings.cpp", "cvqp/libs/proj_sum_largest.cpp"],
+        "cvqp._cpp.projection",
+        ["cvqp/_cpp/bindings.cpp", "cvqp/_cpp/projection.cpp"],
         cxx_std=17,
         extra_compile_args=["-O3"],
     ),
