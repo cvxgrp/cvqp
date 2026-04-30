@@ -119,10 +119,12 @@ python experiments/run.py projection # re-run projection benchmarks
 ## Citation
 
 ```bibtex
-@article{luxenberg2025operator,
+@article{luxenberg2026operator,
   title={An operator splitting method for large-scale CVaR-constrained quadratic programs},
   author={Luxenberg, Eric and P{\'e}rez-Pi{\~n}eiro, David and Diamond, Steven and Boyd, Stephen},
-  journal={arXiv preprint arXiv:2504.10814},
-  year={2025}
+  journal={Optimization and Engineering},
+  pages={1--18},
+  year={2026},
+  publisher={Springer}
 }
 ```
