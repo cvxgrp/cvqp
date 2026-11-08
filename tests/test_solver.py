@@ -150,3 +150,46 @@ class TestSolver:
             cvqp.solve(P=None, q=np.zeros(2), A=np.ones((3, 3)),
                        B=np.eye(2), l=-np.ones(2), u=np.ones(2),
                        beta=0.5, kappa=1.0)
+
+
+def _unbounded_problem():
+    """Feasible problem that is unbounded below: minimize x subject to x <= 0."""
+    return dict(P=None, q=np.array([1.0]), A=np.ones((100, 1)), B=np.zeros((1, 1)),
+                l=np.zeros(1), u=np.zeros(1), beta=0.5, kappa=0.0)
+
+
+def _distant_solution_problem():
+    """Linear problem with solution x* = 1e4, far from the starting point.
+
+    The CVaR constraint is inactive for every x >= 0, so ADMM travels a long
+    path with zero dual variables before the upper bound becomes active.
+    """
+    rng = np.random.default_rng(0)
+    A = -rng.uniform(0.5, 1.5, size=(200, 1))
+    return dict(P=None, q=np.array([-1.0]), A=A, B=sp.csr_matrix([[1.0]]),
+                l=np.zeros(1), u=np.full(1, 1e4), beta=0.9, kappa=1.0)
+
+
+class TestStoppingCriterion:
+    """Regression tests for false convergence from a wrong dual tolerance."""
+
+    def test_unbounded_not_optimal(self):
+        settings = cvqp.Settings(max_iter=5000)
+        result = cvqp.solve(**_unbounded_problem(), settings=settings)
+        assert result.status != "optimal"
+
+    def test_distant_solution(self):
+        result = cvqp.solve(**_distant_solution_problem())
+        assert result.status == "optimal"
+        assert result.x[0] == pytest.approx(1e4, rel=1e-3)
+        assert result.value == pytest.approx(-1e4, rel=1e-3)
+
+    def test_dual_tolerance_with_zero_duals(self):
+        # While no constraint is active the dual variables stay at zero, so
+        # eps_dual = sqrt(n) * abstol + reltol * ||rho C^T u|| reduces to
+        # its absolute term, however large x and the primal iterates grow.
+        settings = cvqp.Settings(max_iter=500)
+        result = cvqp.solve(**_distant_solution_problem(), settings=settings)
+        n = 1
+        for eps_dual in result.history.eps_dual:
+            assert eps_dual == pytest.approx(n**0.5 * settings.abstol)
