@@ -108,7 +108,7 @@ def solve(
         # Convergence check (every check_interval iterations)
         if i % cfg.check_interval == 0:
             r_norm, s_norm, eps_pri, eps_dual = _compute_residuals(
-                Ax, Bx, z, z_t, z_prev, z_t_prev, A_s, B, rho, m, p, cfg,
+                Ax, Bx, z, z_t, z_prev, z_t_prev, u_z, u_t, A_s, B, rho, m, p, cfg,
             )
             obj = _objective(P_s, q_s, x, scale)
 
@@ -202,8 +202,12 @@ def _objective(P, q, x, scale):
     return float(0.5 * np.dot(x, P @ x) + q @ x) * scale
 
 
-def _compute_residuals(Ax, Bx, z, z_t, z_prev, z_t_prev, A, B, rho, m, p, cfg):
-    """Compute primal/dual residuals and tolerances."""
+def _compute_residuals(Ax, Bx, z, z_t, z_prev, z_t_prev, u_z, u_t, A, B, rho, m, p, cfg):
+    """Compute primal/dual residuals and tolerances.
+
+    Follows Boyd et al. (2011), section 3.3.1. The relative term of eps_dual
+    uses the unscaled dual variable y = rho * u.
+    """
     # Primal residual
     r = np.concatenate([Ax - z, Bx - z_t])
     r_norm = np.linalg.norm(r)
@@ -220,7 +224,7 @@ def _compute_residuals(Ax, Bx, z, z_t, z_prev, z_t_prev, A, B, rho, m, p, cfg):
         np.linalg.norm(np.concatenate([z, z_t])),
     )
     eps_dual = sqrt_n * cfg.abstol + cfg.reltol * np.linalg.norm(
-        rho * _densify(A.T @ z + B.T @ z_t)
+        rho * _densify(A.T @ u_z + B.T @ u_t)
     )
 
     return r_norm, s_norm, eps_pri, eps_dual
